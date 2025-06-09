@@ -2,6 +2,10 @@ import requests
 import json
 import pandas as pd
 from datetime import datetime
+from database import sync_with_database
+
+numeric_columns = ['FedLeverage', 'OtherLeverage', 'FTE', 'PTE']
+
 
 sector_mapping = {
     "Environment & Agriculture - Select Sector": [
@@ -173,7 +177,12 @@ def processProgramApplications(applications):
         applications_data.append(application_data)
 
     df = pd.DataFrame(applications_data)
+    for col in numeric_columns:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    # print(df[['FedLeverage', 'OtherLeverage', 'FTE', 'PTE']].head())
     df.to_excel('output.xlsx', index=False)
+    return df
+    
             
 def getApplicationTasks(id):
     data = load_api_info()
@@ -244,6 +253,7 @@ program_name = 'Innovation Voucher Fund'
 ivf_program_id = getProgramId(program_name)
 responses = getProgramApplications(ivf_program_id)
 applications = filterProgramApplications(responses, '2025')
-processProgramApplications(applications)
-getApplicationTasks('30898584')
+df = processProgramApplications(applications)
+sync_with_database(df)
+#getApplicationTasks('30898584')
 #getApplicationTask('31077701', '1840220')
