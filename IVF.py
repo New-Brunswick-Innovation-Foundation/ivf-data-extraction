@@ -2,7 +2,7 @@ import requests
 import json
 import pandas as pd
 from datetime import datetime
-from database import sync_with_database
+from database import sync_with_database, connect_to_db, backup_db
 
 numeric_columns = ['FedLeverage', 'OtherLeverage', 'FTE', 'PTE']
 
@@ -63,7 +63,7 @@ def get_paginated(session, base_url, endpoint, params):
     try:
         response = session.get(f"{base_url}{endpoint}", params=params).json()
     except json.decoder.JSONDecodeError:
-        return None  # Let caller handle the refresh
+        return None
     responses.append(response)
     for page in range(2, response.get("num_pages", 1) + 1):
         params['page'] = page
@@ -246,14 +246,13 @@ def clean_value(string_value):
     float_value = float(string_value)
     return float_value
 
-
-
-
 program_name = 'Innovation Voucher Fund'
 ivf_program_id = getProgramId(program_name)
 responses = getProgramApplications(ivf_program_id)
 applications = filterProgramApplications(responses, '2025')
 df = processProgramApplications(applications)
-sync_with_database(df)
-#getApplicationTasks('30898584')
-#getApplicationTask('31077701', '1840220')
+backup_db()
+sync_with_database(df, 'IVF')
+
+
+
