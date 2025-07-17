@@ -2,7 +2,7 @@ import requests
 import json
 import pandas as pd
 from datetime import datetime
-from database import sync_with_database, connect_to_db, backup_db
+from database import sync_investment_data, sync_people_info_data, sync_voucher_company_data, connect_to_db, backup_db
 
 numeric_columns = ['FedLeverage', 'OtherLeverage', 'FTE', 'PTE']
 
@@ -35,6 +35,44 @@ sector_mapping = {
     ]
 }
 
+city_to_region_mapping = {
+    "Fredericton": "SW",
+    "Moncton": "SE",
+    "Saint John": "SW",
+    "Bathurst": "NE",
+    "Campbellton": "NE",
+    "Miramichi": "NE",
+    "Edmundston": "NW",
+    "Caraquet": "NE",
+    "Shippagan": "NE",
+    "Dieppe": "SE",
+    "Riverview": "SE",
+    "Tracadie-Sheila": "NE",
+    "Sackville": "SE",
+    "St. Stephen": "SW",
+    "Sussex": "SE",
+    "Quispamsis": "SW",
+    "Rothesay": "SW",
+    "Hanwell": "SW",
+    "Clair": "NW",
+    "St. Andrews": "SW",
+}
+
+province_mapping = {
+    0: "AB",
+    1: "BC",
+    2: "MB",
+    3: "NB",
+    4: "NL",
+    5: "NT",
+    6: "NS",
+    7: "NU",
+    8: "ON",
+    9: "PE",
+    10: "QC",
+    11: "SK",
+    12: "YK"
+}
 
 def api2JSON(data: dict):
     with open('program_info.json', 'w') as f:
@@ -120,69 +158,119 @@ def filterProgramApplications(responses, fiscal_year):
     return applications
 
 def processProgramApplications(applications):
-    applications_data = []
+    investment_data = []
+    people_info_data = []
+    voucher_company_data = []
 
     for application in applications:
-        research_fund_id = 'IVF'
         id = application['id']
         tasks = getApplicationTasks(id)
         application_form_id = getApplicationTaskID(tasks, 'IVF - Application Form')
         application_form_task = getApplicationTask(id, application_form_id)
 
-        application_title = getTaskValue(application_form_task, 'Project Information: | Title of Project:')
-        executive_summary = getTaskValue(application_form_task, 'Executive Summary:')
-        amount_requested = clean_value(getTaskValue(application_form_task, 'Requested Contribution from NBIF:'))
+        investment_data.append(getInvestment(application, tasks, application_form_task, id))
+        people_info_data.append(getPeopleInfo(application_form_task))
+        voucher_company_data.append(getVoucherCompany(application_form_task))
 
-        selector_of_research_id = getApplicationTaskID(tasks, 'Select Sector of Research')
-        selector_of_research_task = getApplicationTask(id, selector_of_research_id)
-        sector = map_selector_of_research(selector_of_research_task, sector_mapping)
-        
-        application_date = datetime.strptime(application.get('created_at'), "%Y-%m-%dT%H:%M:%S")
-        amount_awarded = clean_value(application.get('decision', {}).get('awarded'))
-        total_leverage_amount = amount_awarded / 4 if amount_awarded > 0 else 0.00
+    investment_df = pd.DataFrame(investment_data)
+    people_info_df = pd.DataFrame(people_info_data)
+    voucher_company_df = pd.DataFrame(voucher_company_data)
 
-        refnum = ''
-        fiscal_year = ''
-        decision_date = ''
-        for custom_field in application.get('custom_fields', []):
-            name = custom_field.get('name')
-            value = custom_field.get('value')
-            if name == 'NBIF Reference Number':
-                refnum = value
-            elif name == 'Fiscal Year':
-                fiscal_year = value
-            elif name == 'Current Date for NOD':
-                decision_date = datetime.strptime(value, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        application_data = {
-            'RefNum': refnum,
-            'ApplTitle': application_title,
-            'ExecSum': executive_summary,
-            'FiscalYear': fiscal_year,
-            'ResearchFundID': research_fund_id,
-            'ApplDate': application_date,
-            'DecisionDate': decision_date,
-            'AmtRqstd': amount_requested,
-            'AmtAwarded': amount_awarded,
-            'TotalLevAmt': total_leverage_amount,
-            'PrivSectorLev': total_leverage_amount,
-            'FedLeverage': None,
-            'OtherLeverage': None,
-            'FTE': None,
-            'PTE': None,
-            'NBIFSectorID': sector,
-            'Notes': None
-        }
-
-        applications_data.append(application_data)
-
-    df = pd.DataFrame(applications_data)
     for col in numeric_columns:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-    # print(df[['FedLeverage', 'OtherLeverage', 'FTE', 'PTE']].head())
-    df.to_excel('output.xlsx', index=False)
-    return df
+        investment_df[col] = pd.to_numeric(investment_df[col], errors='coerce')
+    return investment_df, people_info_df, voucher_company_df
+
+def getInvestment(application, tasks, application_form_task, id):
+    research_fund_id = 'IVF'
+    application_title = getTaskValue(application_form_task, 'Project Information: | Title of Project:')
+    executive_summary = getTaskValue(application_form_task, 'Executive Summary:')
+    amount_requested = cleanValue(getTaskValue(application_form_task, 'Requested Contribution from NBIF:'))
+
+    selector_of_research_id = getApplicationTaskID(tasks, 'Select Sector of Research')
+    selector_of_research_task = getApplicationTask(id, selector_of_research_id)
+    sector = mapSelectorOfResearch(selector_of_research_task, sector_mapping)
     
+    application_date = datetime.strptime(application.get('created_at'), "%Y-%m-%dT%H:%M:%S")
+    amount_awarded = cleanValue(application.get('decision', {}).get('awarded'))
+    total_leverage_amount = amount_awarded / 4 if amount_awarded > 0 else 0.00
+
+    refnum = ''
+    fiscal_year = ''
+    decision_date = ''
+    for custom_field in application.get('custom_fields', []):
+        name = custom_field.get('name')
+        value = custom_field.get('value')
+        if name == 'NBIF Reference Number':
+            refnum = value
+        elif name == 'Fiscal Year':
+            fiscal_year = value
+        elif name == 'Current Date for NOD':
+            if value:
+                decision_date = datetime.strptime(value, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    investment = {
+        'RefNum': refnum,
+        'ApplTitle': application_title,
+        'ExecSum': executive_summary,
+        'FiscalYear': fiscal_year,
+        'ResearchFundID': research_fund_id,
+        'ApplDate': application_date,
+        'DecisionDate': decision_date,
+        'AmtRqstd': amount_requested,
+        'AmtAwarded': amount_awarded,
+        'TotalLevAmt': total_leverage_amount,
+        'PrivSectorLev': total_leverage_amount,
+        'FedLeverage': None,
+        'OtherLeverage': None,
+        'FTE': None,
+        'PTE': None,
+        'NBIFSectorID': sector,
+        'Notes': None
+    }
+
+    return investment
+    
+def getPeopleInfo(application_form_task):
+    last_name = getTaskValue(application_form_task, 'Researcher Information: | PI Last Name:')
+    first_name = getTaskValue(application_form_task, 'Researcher Information: | Principal Investigator (PI) First Name:')
+    email = getTaskValue(application_form_task, 'Researcher Information: | PI E-mail Address:').strip().lower()
+
+    people_info = {
+        'LastName': last_name,
+        'FirstName': first_name,
+        'Email': email,
+        'Phone': None,
+        'Note': None,
+        'CommOptOut': None
+    }
+
+    return people_info
+
+def getVoucherCompany(application_form_task):
+    company_name = getTaskValue(application_form_task, 'Company Information: | Company Name:')
+    address = getTaskValue(application_form_task, 'Company Information: | Company Street Address:')
+    city = getTaskValue(application_form_task, 'Company Information: | City:')
+    province_index = getTaskValue(application_form_task, 'Company Information: | Province:')
+    postal_code = getTaskValue(application_form_task, 'Company Information: | Postal Code:')
+    incorporation_date = getTaskValue(application_form_task, 'Company Information: | Date of Incorporation:').replace('/', '-')
+
+    region = mapCityToRegion(city, city_to_region_mapping)
+    province = mapProvince(province_index, province_mapping, company_name)
+
+    voucher_company = {
+        'CompanyName': company_name,
+        'Address': address,
+        'City': city,
+        'Province': province,
+        'PostalCode': postal_code,
+        'Country': 'Canada',
+        'IncorporationDate': incorporation_date,
+        'Region': region
+    }
+
+    return voucher_company
+
+
             
 def getApplicationTasks(id):
     data = load_api_info()
@@ -226,7 +314,7 @@ def getTaskValue(responses, label):
             if field.get("label") == label:
                 return field.get("response")
 
-def map_selector_of_research(selector_of_research_task, sector_mapping):
+def mapSelectorOfResearch(selector_of_research_task, sector_mapping):
     data = selector_of_research_task[0].get("data", {})
 
     for field in data.values():
@@ -239,20 +327,48 @@ def map_selector_of_research(selector_of_research_task, sector_mapping):
     
     return None  #for when no valid mapping was found
 
-def clean_value(string_value):
+def mapCityToRegion(city, city_to_region_mapping):
+    normalized_city = city.strip().title()  # Normalize formatting
+    if normalized_city in city_to_region_mapping:
+        return city_to_region_mapping[normalized_city]
+    else:
+        region = input(f"Enter region for city '{city}' (NE/NW/SE/SW): ").strip().upper()
+        while region not in ["NE", "NW", "SE", "SW"]:
+            region = input("Invalid input. Please enter NE, NW, SE, or SW: ").strip().upper()
+        city_to_region_mapping[normalized_city] = region  # Save it for future use
+        return region
+
+def mapProvince(province_index, province_mapping, company_name):
+    if province_index in province_mapping:
+        return province_mapping[province_index]
+    else:
+        return input(f"Enter province for company '{company_name}' (NB, NS, etc.): ").strip().upper()
+
+def cleanValue(string_value):
     replacements = [(",", ""), ("$", "")]
     for old, new in replacements:
         string_value = string_value.replace(old, new)
     float_value = float(string_value)
     return float_value
 
+def removeDuplicates(df):
+    df.drop_duplicates(inplace=True)
+    return df
+
 program_name = 'Innovation Voucher Fund'
 ivf_program_id = getProgramId(program_name)
 responses = getProgramApplications(ivf_program_id)
 applications = filterProgramApplications(responses, '2025')
-df = processProgramApplications(applications)
+investment_df, people_info_df, voucher_company_df = processProgramApplications(applications)
+investment_df = removeDuplicates(investment_df)
+people_info_df = removeDuplicates(people_info_df)
+voucher_company_df = removeDuplicates(voucher_company_df)
+investment_df.to_excel("investment.xlsx")
+people_info_df.to_excel("people_info.xlsx")
+voucher_company_df.to_excel("voucher_company.xlsx")
 backup_db()
-sync_with_database(df, 'IVF')
-
+sync_investment_data(investment_df, 'IVF')
+sync_people_info_data(people_info_df)
+sync_voucher_company_data(voucher_company_df)
 
 
