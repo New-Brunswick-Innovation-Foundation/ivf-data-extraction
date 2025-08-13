@@ -1,8 +1,9 @@
 import requests
 import json
 import pandas as pd
+import re
 from datetime import datetime
-from database import sync_investment_data, sync_people_info_data, sync_voucher_company_data, connect_to_db, backup_db
+from database import sync_investment_data, sync_people_info_data_enhanced, sync_voucher_company_data_enhanced, backup_db, get_company_id_by_name, get_person_id_by_email, insert_into_company_asgmt, insert_into_project_asgmt
 
 numeric_columns = ['FedLeverage', 'OtherLeverage', 'FTE', 'PTE']
 
@@ -228,6 +229,12 @@ def getInvestment(application, tasks, application_form_task, id):
         'Notes': None
     }
 
+    #Appending email and company name for inserting records into assignment tables
+    email = getTaskValue(application_form_task, 'Researcher Information: | PI E-mail Address:').strip().lower()
+    company_name = getTaskValue(application_form_task, 'Company Information: | Company Name:')
+    investment['Email'] = email
+    investment['CompanyName'] = company_name
+
     return investment
     
 def getPeopleInfo(application_form_task):
@@ -254,8 +261,9 @@ def getVoucherCompany(application_form_task):
     postal_code = getTaskValue(application_form_task, 'Company Information: | Postal Code:')
     incorporation_date = getTaskValue(application_form_task, 'Company Information: | Date of Incorporation:').replace('/', '-')
 
-    region = mapCityToRegion(city, city_to_region_mapping)
+    
     province = mapProvince(province_index, province_mapping, company_name)
+    region = mapCityToRegion(city, city_to_region_mapping)
 
     voucher_company = {
         'CompanyName': company_name,
@@ -343,6 +351,69 @@ def mapProvince(province_index, province_mapping, company_name):
         return province_mapping[province_index]
     else:
         return input(f"Enter province for company '{company_name}' (NB, NS, etc.): ").strip().upper()
+    
+def process_join_tables(investment_df, people_insert_df, people_skip_df, people_update_df, company_insert_df, company_skip_df, company_update_df):
+    from database import connect_to_db
+    conn = connect_to_db(False)
+    if not conn:
+        print("Unable to connect to DB for join table inserts.")
+        return
+
+    try:
+        for _, investment in investment_df.iterrows():
+            refnum = investment["RefNum"]
+
+            # Match PeopleInfo by email
+            email = investment.get("Email", "").strip().lower()
+            person_id = None
+            if email:
+                # Check all three DataFrames for people
+                match_insert = pd.DataFrame()
+                match_skip = pd.DataFrame()
+                match_update = pd.DataFrame()
+                
+                if not people_insert_df.empty and "Email" in people_insert_df.columns:
+                    match_insert = people_insert_df[people_insert_df["Email"].str.lower() == email]
+                    
+                if not people_skip_df.empty and "Email" in people_skip_df.columns:
+                    match_skip = people_skip_df[people_skip_df["Email"].str.lower() == email]
+                    
+                if not people_update_df.empty and "Email" in people_update_df.columns:
+                    match_update = people_update_df[people_update_df["Email"].str.lower() == email]
+
+                if not match_insert.empty or not match_skip.empty or not match_update.empty:
+                    person_id = get_person_id_by_email(email, conn)
+
+            if person_id:
+                insert_into_project_asgmt(refnum, person_id, conn)
+
+            # Match Company by name
+            company_name = investment.get("CompanyName", "").strip()
+            company_id = None
+            if company_name:
+                # Check all three DataFrames for companies
+                match_insert = pd.DataFrame()
+                match_skip = pd.DataFrame()
+                match_update = pd.DataFrame()
+                
+                if not company_insert_df.empty and "CompanyName" in company_insert_df.columns:
+                    match_insert = company_insert_df[company_insert_df["CompanyName"] == company_name]
+                    
+                if not company_skip_df.empty and "CompanyName" in company_skip_df.columns:
+                    match_skip = company_skip_df[company_skip_df["CompanyName"] == company_name]
+                    
+                if not company_update_df.empty and "CompanyName" in company_update_df.columns:
+                    match_update = company_update_df[company_update_df["CompanyName"] == company_name]
+
+                if not match_insert.empty or not match_skip.empty or not match_update.empty:
+                    company_id = get_company_id_by_name(company_name, conn)
+
+            if company_id:
+                insert_into_company_asgmt(refnum, company_id, conn)
+                
+    finally:
+        conn.close()
+
 
 def cleanValue(string_value):
     replacements = [(",", ""), ("$", "")]
@@ -360,15 +431,34 @@ ivf_program_id = getProgramId(program_name)
 responses = getProgramApplications(ivf_program_id)
 applications = filterProgramApplications(responses, '2025')
 investment_df, people_info_df, voucher_company_df = processProgramApplications(applications)
+# Remove duplicates within the current batch first
 investment_df = removeDuplicates(investment_df)
 people_info_df = removeDuplicates(people_info_df)
 voucher_company_df = removeDuplicates(voucher_company_df)
+
+# Save to Excel for review
 investment_df.to_excel("investment.xlsx")
 people_info_df.to_excel("people_info.xlsx")
 voucher_company_df.to_excel("voucher_company.xlsx")
+
+# Backup database
 backup_db()
+
 sync_investment_data(investment_df, 'IVF')
-sync_people_info_data(people_info_df)
-sync_voucher_company_data(voucher_company_df)
+
+people_insert_df, people_skip_df, people_update_df = sync_people_info_data_enhanced(
+    people_info_df, 
+    interactive=True,
+    similarity_threshold=0.75
+)
+
+company_insert_df, company_skip_df, company_update_df = sync_voucher_company_data_enhanced(
+    voucher_company_df, 
+    interactive=True,
+    similarity_threshold=0.75
+)
+
+process_join_tables(investment_df, people_insert_df, people_skip_df, people_update_df, company_insert_df, company_skip_df, company_update_df)
+
 
 
