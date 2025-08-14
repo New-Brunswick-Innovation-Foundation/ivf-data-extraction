@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import re
 from datetime import datetime
-from database import sync_investment_data, sync_people_info_data_enhanced, sync_voucher_company_data_enhanced, backup_db, get_company_id_by_name, get_person_id_by_email, insert_into_company_asgmt, insert_into_project_asgmt
+from database import sync_investment_data, sync_people_info_data_enhanced, sync_people_info_data_enhanced_with_ids, sync_voucher_company_data_enhanced, backup_db, get_company_id_by_name, get_person_id_by_email, insert_into_company_asgmt, insert_into_project_asgmt, sync_voucher_company_data_enhanced_with_ids
 
 numeric_columns = ['FedLeverage', 'OtherLeverage', 'FTE', 'PTE']
 
@@ -352,7 +352,9 @@ def mapProvince(province_index, province_mapping, company_name):
     else:
         return input(f"Enter province for company '{company_name}' (NB, NS, etc.): ").strip().upper()
     
-def process_join_tables(investment_df, people_insert_df, people_skip_df, people_update_df, company_insert_df, company_skip_df, company_update_df):
+def process_join_tables(investment_df,
+                        people_insert_df, people_skip_df, people_update_df,
+                        company_insert_df, company_skip_df, company_update_df):
     from database import connect_to_db
     conn = connect_to_db(False)
     if not conn:
@@ -360,59 +362,89 @@ def process_join_tables(investment_df, people_insert_df, people_skip_df, people_
         return
 
     try:
+        linked_people = set()   # (refnum, person_id)
+        linked_companies = set()  # (refnum, company_id)
+
         for _, investment in investment_df.iterrows():
             refnum = investment["RefNum"]
 
-            # Match PeopleInfo by email
-            email = investment.get("Email", "").strip().lower()
+            # ---- Handle People ----
+            email = str(investment.get("Email", "")).strip().lower()
             person_id = None
-            if email:
-                # Check all three DataFrames for people
-                match_insert = pd.DataFrame()
-                match_skip = pd.DataFrame()
-                match_update = pd.DataFrame()
-                
-                if not people_insert_df.empty and "Email" in people_insert_df.columns:
-                    match_insert = people_insert_df[people_insert_df["Email"].str.lower() == email]
-                    
-                if not people_skip_df.empty and "Email" in people_skip_df.columns:
-                    match_skip = people_skip_df[people_skip_df["Email"].str.lower() == email]
-                    
-                if not people_update_df.empty and "Email" in people_update_df.columns:
-                    match_update = people_update_df[people_update_df["Email"].str.lower() == email]
 
-                if not match_insert.empty or not match_skip.empty or not match_update.empty:
-                    person_id = get_person_id_by_email(email, conn)
+            # check skip df
+            if not people_skip_df.empty and "_matched_existing_id" in people_skip_df.columns:
+                match_skip = people_skip_df[people_skip_df.get("Email", "").str.lower() == email]
+                if not match_skip.empty:
+                    person_id = safe_int(match_skip["_matched_existing_id"].iloc[0])
 
-            if person_id:
-                insert_into_project_asgmt(refnum, person_id, conn)
+            # check update df
+            if person_id is None and not people_update_df.empty and "_update_target_id" in people_update_df.columns:
+                match_update = people_update_df[people_update_df.get("Email", "").str.lower() == email]
+                if not match_update.empty:
+                    person_id = safe_int(match_update["_update_target_id"].iloc[0])
 
-            # Match Company by name
-            company_name = investment.get("CompanyName", "").strip()
+            # fallback lookup
+            if person_id is None and email:
+                pid = get_person_id_by_email(email, conn)
+                if pid:
+                    person_id = safe_int(pid)
+
+            # insert only if not already linked
+            if person_id is not None:
+                key = (refnum, person_id)
+                if key not in linked_people and not assignment_exists("ProjectAsgmt", refnum, person_id, conn):
+                    insert_into_project_asgmt(refnum, person_id, conn)
+                    linked_people.add(key)
+
+            # ---- Handle Companies ----
+            company_name = str(investment.get("CompanyName", "")).strip()
             company_id = None
-            if company_name:
-                # Check all three DataFrames for companies
-                match_insert = pd.DataFrame()
-                match_skip = pd.DataFrame()
-                match_update = pd.DataFrame()
-                
-                if not company_insert_df.empty and "CompanyName" in company_insert_df.columns:
-                    match_insert = company_insert_df[company_insert_df["CompanyName"] == company_name]
-                    
-                if not company_skip_df.empty and "CompanyName" in company_skip_df.columns:
-                    match_skip = company_skip_df[company_skip_df["CompanyName"] == company_name]
-                    
-                if not company_update_df.empty and "CompanyName" in company_update_df.columns:
-                    match_update = company_update_df[company_update_df["CompanyName"] == company_name]
 
-                if not match_insert.empty or not match_skip.empty or not match_update.empty:
-                    company_id = get_company_id_by_name(company_name, conn)
+            if not company_skip_df.empty and "_matched_existing_id" in company_skip_df.columns:
+                match_skip = company_skip_df[company_skip_df.get("CompanyName", "") == company_name]
+                if not match_skip.empty:
+                    company_id = safe_int(match_skip["_matched_existing_id"].iloc[0])
 
-            if company_id:
-                insert_into_company_asgmt(refnum, company_id, conn)
-                
+            if company_id is None and not company_update_df.empty and "_update_target_id" in company_update_df.columns:
+                match_update = company_update_df[company_update_df.get("CompanyName", "") == company_name]
+                if not match_update.empty:
+                    company_id = safe_int(match_update["_update_target_id"].iloc[0])
+
+            if company_id is None and company_name:
+                cid = get_company_id_by_name(company_name, conn)
+                if cid:
+                    company_id = safe_int(cid)
+
+            if company_id is not None:
+                key = (refnum, company_id)
+                if key not in linked_companies and not assignment_exists("CompanyAsgmt", refnum, company_id, conn):
+                    insert_into_company_asgmt(refnum, company_id, conn)
+                    linked_companies.add(key)
+
     finally:
         conn.close()
+
+def assignment_exists(table_name, refnum, entity_id, conn):
+    """Check if an association already exists in the join table."""
+    cursor = conn.cursor()
+    if table_name == "ProjectAsgmt":
+        cursor.execute("SELECT 1 FROM ProjectAsgmt WHERE RefNum = ? AND PersonID = ?", (refnum, entity_id))
+    else:
+        cursor.execute("SELECT 1 FROM CompanyAsgmt WHERE RefNum = ? AND CompanyID = ?", (refnum, entity_id))
+    return cursor.fetchone() is not None
+
+def safe_int(val):
+    """Convert to int if it's a real number, otherwise return None."""
+    try:
+        if val is None:
+            return None
+        if pd.isna(val):
+            return None
+        return int(val)
+    except (ValueError, TypeError):
+        return None
+
 
 
 def cleanValue(string_value):
@@ -446,17 +478,39 @@ backup_db()
 
 sync_investment_data(investment_df, 'IVF')
 
-people_insert_df, people_skip_df, people_update_df = sync_people_info_data_enhanced(
+people_insert_df, people_skip_df, people_update_df = sync_people_info_data_enhanced_with_ids(
     people_info_df, 
     interactive=True,
     similarity_threshold=0.75
 )
 
-company_insert_df, company_skip_df, company_update_df = sync_voucher_company_data_enhanced(
+print("\n=== DEBUG: People Update DataFrame ===")
+if not people_update_df.empty:
+    debug_columns = ['FirstName', 'LastName', 'Email']
+    if '_update_target_id' in people_update_df.columns:
+        debug_columns.append('_update_target_id')
+    elif '_update_target' in people_update_df.columns:
+        debug_columns.append('_update_target')
+    print(people_update_df[debug_columns].to_string())
+else:
+    print("No people updates")
+
+company_insert_df, company_skip_df, company_update_df = sync_voucher_company_data_enhanced_with_ids(
     voucher_company_df, 
     interactive=True,
     similarity_threshold=0.75
 )
+
+print("\n=== DEBUG: Company Update DataFrame ===")
+if not company_update_df.empty:
+    debug_columns = ['CompanyName', 'Address']
+    if '_update_target_id' in company_update_df.columns:
+        debug_columns.append('_update_target_id')
+    elif '_update_target' in company_update_df.columns:
+        debug_columns.append('_update_target')
+    print(company_update_df[debug_columns].to_string())
+else:
+    print("No company updates")
 
 process_join_tables(investment_df, people_insert_df, people_skip_df, people_update_df, company_insert_df, company_skip_df, company_update_df)
 
