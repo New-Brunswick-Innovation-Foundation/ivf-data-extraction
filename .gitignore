@@ -2,4 +2,5 @@
 *.xlsx
 *.json
 __pycache__/
+*.pyc
 normalization.py

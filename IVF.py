@@ -3,10 +3,9 @@ import json
 import pandas as pd
 import re
 from datetime import datetime
-from database import sync_investment_data, sync_people_info_data_enhanced, sync_people_info_data_enhanced_with_ids, sync_voucher_company_data_enhanced, backup_db, get_company_id_by_name, get_person_id_by_email, insert_into_company_asgmt, insert_into_project_asgmt, sync_voucher_company_data_enhanced_with_ids
+from database import sync_investment_data, sync_people_info_data, sync_voucher_company_data, backup_db, get_company_id_by_name, get_person_id_by_email, insert_into_company_asgmt, insert_into_project_asgmt
 
 numeric_columns = ['FedLeverage', 'OtherLeverage', 'FTE', 'PTE']
-
 
 sector_mapping = {
     "Environment & Agriculture - Select Sector": [
@@ -75,7 +74,7 @@ province_mapping = {
     12: "YK"
 }
 
-def api2JSON(data: dict):
+def api_2_JSON(data: dict):
     with open('program_info.json', 'w') as f:
         json.dump(data, f, indent=4)
 
@@ -87,7 +86,7 @@ def refresh_token(api_info):
     response = requests.post('https://nbif-finb.smapply.io/api/o/token/', data=api_info['api']).json()
     api_info['api']['access_token'] = response['access_token']
     api_info['api']['refresh_token'] = response['refresh_token']
-    api2JSON(api_info)
+    api_2_JSON(api_info)
     return api_info
 
 def get_session(api_info):
@@ -109,7 +108,7 @@ def get_paginated(session, base_url, endpoint, params):
         responses.append(session.get(f"{base_url}{endpoint}", params=params).json())
     return responses
 
-def getProgramId(name):
+def get_program_ID(name):
     data = load_api_info()
     session = get_session(data)
     base_url = "https://nbif-finb.smapply.io/api/"
@@ -127,7 +126,7 @@ def getProgramId(name):
             if result['name'].strip().lower() == name.strip().lower():
                 return result['id']
 
-def getProgramApplications(id):
+def get_program_applications(id):
     data = load_api_info()
     session = get_session(data)
     base_url = "https://nbif-finb.smapply.io/api/"
@@ -143,7 +142,7 @@ def getProgramApplications(id):
         responses = get_paginated(session, base_url, endpoint, params)
     return responses
 
-def filterProgramApplications(responses, fiscal_year):
+def filter_program_applications(responses, fiscal_year):
     applications = []
     for page in responses:
         for result in page.get('results', []):
@@ -158,20 +157,20 @@ def filterProgramApplications(responses, fiscal_year):
                 applications.append(result)
     return applications
 
-def processProgramApplications(applications):
+def process_program_applications(applications):
     investment_data = []
     people_info_data = []
     voucher_company_data = []
 
     for application in applications:
         id = application['id']
-        tasks = getApplicationTasks(id)
-        application_form_id = getApplicationTaskID(tasks, 'IVF - Application Form')
-        application_form_task = getApplicationTask(id, application_form_id)
+        tasks = get_application_tasks(id)
+        application_form_id = get_application_task_ID(tasks, 'IVF - Application Form')
+        application_form_task = get_application_task(id, application_form_id)
 
-        investment_data.append(getInvestment(application, tasks, application_form_task, id))
-        people_info_data.append(getPeopleInfo(application_form_task))
-        voucher_company_data.append(getVoucherCompany(application_form_task))
+        investment_data.append(get_investment(application, tasks, application_form_task, id))
+        people_info_data.append(get_people_info(application_form_task))
+        voucher_company_data.append(get_voucher_company(application_form_task))
 
     investment_df = pd.DataFrame(investment_data)
     people_info_df = pd.DataFrame(people_info_data)
@@ -181,33 +180,52 @@ def processProgramApplications(applications):
         investment_df[col] = pd.to_numeric(investment_df[col], errors='coerce')
     return investment_df, people_info_df, voucher_company_df
 
-def getInvestment(application, tasks, application_form_task, id):
-    research_fund_id = 'IVF'
-    application_title = getTaskValue(application_form_task, 'Project Information: | Title of Project:')
-    executive_summary = getTaskValue(application_form_task, 'Executive Summary:')
-    amount_requested = cleanValue(getTaskValue(application_form_task, 'Requested Contribution from NBIF:'))
+def get_investment(application, tasks, application_form_task, id):
+    if not application:
+        print(f"Skipping empty application: {id}")
+        return None
 
-    selector_of_research_id = getApplicationTaskID(tasks, 'Select Sector of Research')
-    selector_of_research_task = getApplicationTask(id, selector_of_research_id)
-    sector = mapSelectorOfResearch(selector_of_research_task, sector_mapping)
+    research_fund_id = 'IVF'
+    application_title = get_task_value(application_form_task, 'Project Information: | Title of Project:')
+    executive_summary = get_task_value(application_form_task, 'Executive Summary:')
+    amount_requested = clean_value(get_task_value(application_form_task, 'Requested Contribution from NBIF:'))
+
+    selector_of_research_id = get_application_task_ID(tasks, 'Select Sector of Research')
+    selector_of_research_task = get_application_task(id, selector_of_research_id)
+    sector = map_selector_of_research(selector_of_research_task, sector_mapping)
     
-    application_date = datetime.strptime(application.get('created_at'), "%Y-%m-%dT%H:%M:%S")
-    amount_awarded = cleanValue(application.get('decision', {}).get('awarded'))
+    created_at = application.get('created_at')
+    application_date = None
+    if created_at:
+        try:
+            application_date = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%S")
+        except (ValueError, TypeError):
+            print(f"Unexpected created_at format for application {id}: {created_at}")
+
+    decision = application.get('decision') or {}
+    awarded = decision.get('awarded')
+    amount_awarded = 0.0
+    if awarded:
+        try:
+            amount_awarded = clean_value(str(awarded))
+        except Exception as e:
+            print(f"Could not clean awarded value for application {id}: {awarded} ({e})")
+
     total_leverage_amount = amount_awarded / 4 if amount_awarded > 0 else 0.00
 
     refnum = ''
     fiscal_year = ''
     decision_date = ''
-    for custom_field in application.get('custom_fields', []):
+    for custom_field in application.get('custom_fields') or []:
         name = custom_field.get('name')
         value = custom_field.get('value')
         if name == 'NBIF Reference Number':
             refnum = value
         elif name == 'Fiscal Year':
-            fiscal_year = value
+            fiscal_year = map_fiscal_year(value)
         elif name == 'Current Date for NOD':
             if value:
-                decision_date = datetime.strptime(value, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0)
+                decision_date = map_decision_date(value)
     
     investment = {
         'RefNum': refnum,
@@ -230,17 +248,19 @@ def getInvestment(application, tasks, application_form_task, id):
     }
 
     #Appending email and company name for inserting records into assignment tables
-    email = getTaskValue(application_form_task, 'Researcher Information: | PI E-mail Address:').strip().lower()
-    company_name = getTaskValue(application_form_task, 'Company Information: | Company Name:')
+    email_response = get_task_value(application_form_task, 'Researcher Information: | PI E-mail Address:').strip().lower()
+    email = clean_email(email_response)
+    company_name = get_task_value(application_form_task, 'Company Information: | Company Name:')
     investment['Email'] = email
     investment['CompanyName'] = company_name
 
     return investment
     
-def getPeopleInfo(application_form_task):
-    last_name = getTaskValue(application_form_task, 'Researcher Information: | PI Last Name:')
-    first_name = getTaskValue(application_form_task, 'Researcher Information: | Principal Investigator (PI) First Name:')
-    email = getTaskValue(application_form_task, 'Researcher Information: | PI E-mail Address:').strip().lower()
+def get_people_info(application_form_task):
+    last_name = get_task_value(application_form_task, 'Researcher Information: | PI Last Name:')
+    first_name = get_task_value(application_form_task, 'Researcher Information: | Principal Investigator (PI) First Name:')
+    email_response = get_task_value(application_form_task, 'Researcher Information: | PI E-mail Address:').strip().lower()
+    email = clean_email(email_response)
 
     people_info = {
         'LastName': last_name,
@@ -253,17 +273,17 @@ def getPeopleInfo(application_form_task):
 
     return people_info
 
-def getVoucherCompany(application_form_task):
-    company_name = getTaskValue(application_form_task, 'Company Information: | Company Name:')
-    address = getTaskValue(application_form_task, 'Company Information: | Company Street Address:')
-    city = getTaskValue(application_form_task, 'Company Information: | City:')
-    province_index = getTaskValue(application_form_task, 'Company Information: | Province:')
-    postal_code = getTaskValue(application_form_task, 'Company Information: | Postal Code:')
-    incorporation_date = getTaskValue(application_form_task, 'Company Information: | Date of Incorporation:').replace('/', '-')
+def get_voucher_company(application_form_task):
+    company_name = get_task_value(application_form_task, 'Company Information: | Company Name:')
+    address = get_task_value(application_form_task, 'Company Information: | Company Street Address:')
+    city = get_task_value(application_form_task, 'Company Information: | City:')
+    province_index = get_task_value(application_form_task, 'Company Information: | Province:')
+    postal_code = get_task_value(application_form_task, 'Company Information: | Postal Code:')
+    incorporation_date = get_task_value(application_form_task, 'Company Information: | Date of Incorporation:').replace('/', '-')
 
     
-    province = mapProvince(province_index, province_mapping, company_name)
-    region = mapCityToRegion(city, city_to_region_mapping)
+    province = map_province(province_index, province_mapping, company_name)
+    region = map_city_to_region(city, city_to_region_mapping)
 
     voucher_company = {
         'CompanyName': company_name,
@@ -280,7 +300,7 @@ def getVoucherCompany(application_form_task):
 
 
             
-def getApplicationTasks(id):
+def get_application_tasks(id):
     data = load_api_info()
     session = get_session(data)
     base_url = "https://nbif-finb.smapply.io/api/"
@@ -294,7 +314,7 @@ def getApplicationTasks(id):
         responses = get_paginated(session, base_url, endpoint, params)
     return responses
 
-def getApplicationTask(id, task_id):
+def get_application_task(id, task_id):
     data = load_api_info()
     session = get_session(data)
     base_url = "https://nbif-finb.smapply.io/api/"
@@ -309,20 +329,20 @@ def getApplicationTask(id, task_id):
 
     return responses
 
-def getApplicationTaskID(task_wrappers, task_name):
+def get_application_task_ID(task_wrappers, task_name):
     for wrapper in task_wrappers:
         for task in wrapper.get("results", []):
             if task.get("name") == task_name:
                 return task.get("id")
             
-def getTaskValue(responses, label):
+def get_task_value(responses, label):
     for response in responses:
         data = response.get("data", {})
         for field in data.values():
             if field.get("label") == label:
                 return field.get("response")
 
-def mapSelectorOfResearch(selector_of_research_task, sector_mapping):
+def map_selector_of_research(selector_of_research_task, sector_mapping):
     data = selector_of_research_task[0].get("data", {})
 
     for field in data.values():
@@ -335,7 +355,7 @@ def mapSelectorOfResearch(selector_of_research_task, sector_mapping):
     
     return None  #for when no valid mapping was found
 
-def mapCityToRegion(city, city_to_region_mapping):
+def map_city_to_region(city, city_to_region_mapping):
     normalized_city = city.strip().title()  # Normalize formatting
     if normalized_city in city_to_region_mapping:
         return city_to_region_mapping[normalized_city]
@@ -346,11 +366,36 @@ def mapCityToRegion(city, city_to_region_mapping):
         city_to_region_mapping[normalized_city] = region  # Save it for future use
         return region
 
-def mapProvince(province_index, province_mapping, company_name):
+def map_province(province_index, province_mapping, company_name):
     if province_index in province_mapping:
         return province_mapping[province_index]
     else:
         return input(f"Enter province for company '{company_name}' (NB, NS, etc.): ").strip().upper()
+
+def map_fiscal_year(fiscal_year):
+    if fiscal_year == '2024':
+        return '2023-2024'
+    elif fiscal_year == '2023':
+        return '2022-2023'
+    else:
+        return fiscal_year
+    
+def map_decision_date(decision_date):
+    if not decision_date or str(decision_date).strip() == "":
+        return None
+    
+    decision_date = decision_date.strip()
+    date_formats = ["%Y-%m-%d", "%m/%d/%Y", "%d/%m/%Y"]
+    
+    for format in date_formats:
+        try:
+            return datetime.strptime(decision_date, format).replace(hour=0, minute=0, second=0, microsecond=0)
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(decision_date)
+    except ValueError:
+        return None
     
 def process_join_tables(investment_df,
                         people_insert_df, people_skip_df, people_update_df,
@@ -445,40 +490,54 @@ def safe_int(val):
     except (ValueError, TypeError):
         return None
 
+def clean_value(string_value):
+    if string_value is None:
+        return 0.0
+    if isinstance(string_value, (int, float)):
+        return float(string_value)
+    try:
+        s = str(string_value)
+        for old, new in [(",", ""), ("$", "")]:
+            s = s.replace(old, new)
+        return float(s)
+    except (ValueError, TypeError):
+        return 0.0
 
 
-def cleanValue(string_value):
-    replacements = [(",", ""), ("$", "")]
-    for old, new in replacements:
-        string_value = string_value.replace(old, new)
-    float_value = float(string_value)
-    return float_value
-
-def removeDuplicates(df):
+def remove_duplicates(df):
     df.drop_duplicates(inplace=True)
     return df
 
-program_name = 'Innovation Voucher Fund'
-ivf_program_id = getProgramId(program_name)
-responses = getProgramApplications(ivf_program_id)
-applications = filterProgramApplications(responses, '2025')
-investment_df, people_info_df, voucher_company_df = processProgramApplications(applications)
-# Remove duplicates within the current batch first
-investment_df = removeDuplicates(investment_df)
-people_info_df = removeDuplicates(people_info_df)
-voucher_company_df = removeDuplicates(voucher_company_df)
+import re
 
-# Save to Excel for review
-investment_df.to_excel("investment.xlsx")
-people_info_df.to_excel("people_info.xlsx")
-voucher_company_df.to_excel("voucher_company.xlsx")
+def clean_email(email_response):
+    if not email_response or not isinstance(email_response, str):
+        return None
+    
+    # Common regex for email detection
+    email_pattern = r'[\w\.-]+@[\w\.-]+\.\w+'
+    email = re.search(email_pattern, email_response)
+    if email:
+        return email.group(0).lower().strip()
+    return None
+
+
+program_name = 'Innovation Voucher Fund'
+ivf_program_id = get_program_ID(program_name)
+responses = get_program_applications(ivf_program_id)
+applications = filter_program_applications(responses, '2024')
+investment_df, people_info_df, voucher_company_df = process_program_applications(applications)
+# Remove duplicates within the current batch first
+investment_df = remove_duplicates(investment_df)
+people_info_df = remove_duplicates(people_info_df)
+voucher_company_df = remove_duplicates(voucher_company_df)
 
 # Backup database
 backup_db()
 
 sync_investment_data(investment_df, 'IVF')
 
-people_insert_df, people_skip_df, people_update_df = sync_people_info_data_enhanced_with_ids(
+people_insert_df, people_skip_df, people_update_df = sync_people_info_data(
     people_info_df, 
     interactive=True,
     similarity_threshold=0.75
@@ -495,7 +554,7 @@ if not people_update_df.empty:
 else:
     print("No people updates")
 
-company_insert_df, company_skip_df, company_update_df = sync_voucher_company_data_enhanced_with_ids(
+company_insert_df, company_skip_df, company_update_df = sync_voucher_company_data(
     voucher_company_df, 
     interactive=True,
     similarity_threshold=0.75

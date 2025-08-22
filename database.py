@@ -221,11 +221,6 @@ def generate_insert_query(table_name, columns):
     column_names = ', '.join(columns)
     return f"INSERT INTO {table_name} ({column_names}) VALUES ({placeholders})"
 
-def generate_update_query(table_name, columns, unique_column):
-    """Generate UPDATE query for the specified table."""
-    set_clause = ', '.join([f"{col} = ?" for col in columns if col != unique_column])
-    return f"UPDATE {table_name} SET {set_clause} WHERE {unique_column} = ?"
-
 def insert_new_records(insert_df, table_name, conn):
     """Insert new records into the specified table."""
     config = TABLE_CONFIGS.get(table_name)
@@ -286,102 +281,6 @@ def update_existing_records(update_df, table_name, conn):
             except Exception as e:
                 logging.error(f"Error updating {table_name} record {target_value}: {e}")
         
-        conn.commit()
-
-def update_existing_records_enhanced(update_df, table_name, conn):
-    """
-    Enhanced update function that handles updates based on the _update_target field.
-    """
-    if update_df.empty:
-        return
-        
-    config = TABLE_CONFIGS.get(table_name)
-    if not config:
-        logging.error(f"Unknown table: {table_name}")
-        return
-    
-    columns = config['columns']
-    unique_column = config['unique_column']
-    
-    with conn.cursor() as cursor:
-        for _, row in update_df.iterrows():
-            # Use _update_target to identify which record to update
-            target_value = row.get('_update_target')
-            update_by = row.get('_update_by', 'default')
-            
-            if not target_value:
-                continue
-            
-            print(f"\n=== DEBUG: Updating {table_name} record ===")
-            print(f"Target: {target_value}")
-            print(f"Update by: {update_by}")
-            
-            # Show BEFORE state
-            if table_name == 'PeopleInfo' and update_by == 'name':
-                first_name, last_name = target_value.split('|')
-                cursor.execute("SELECT * FROM PeopleInfo WHERE FirstName = ? AND LastName = ?", (first_name, last_name))
-                before_record = cursor.fetchone()
-                print(f"BEFORE: {before_record}")
-            else:
-                cursor.execute(f"SELECT * FROM {table_name} WHERE {unique_column} = ?", (target_value,))
-                before_record = cursor.fetchone()
-                print(f"BEFORE: {before_record}")
-            
-            # Build the SET clause for all columns except the unique column
-            set_clauses = []
-            update_values = []
-            
-            print("Fields being updated:")
-            for col in columns:
-                if col != unique_column:  # Don't update the unique identifier
-                    set_clauses.append(f"{col} = ?")
-                    value = row.get(col)
-                    clean_value = None if pd.isna(value) else value
-                    update_values.append(clean_value)
-                    print(f"  {col}: {clean_value}")
-            
-            if not set_clauses:
-                continue
-                
-            set_clause = ', '.join(set_clauses)
-            
-            # Choose update query based on how we're identifying the record
-            if table_name == 'PeopleInfo' and update_by == 'name':
-                # Update by first name + last name combination
-                first_name, last_name = target_value.split('|')
-                update_query = f"UPDATE {table_name} SET {set_clause} WHERE FirstName = ? AND LastName = ?"
-                query_values = update_values + [first_name, last_name]
-            else:
-                # Default: update by unique column
-                update_query = f"UPDATE {table_name} SET {set_clause} WHERE {unique_column} = ?"
-                query_values = update_values + [target_value]
-            
-            print(f"SQL Query: {update_query}")
-            print(f"Query Values: {query_values}")
-            
-            try:
-                cursor.execute(update_query, query_values)
-                affected_rows = cursor.rowcount
-                
-                # Show AFTER state
-                if table_name == 'PeopleInfo' and update_by == 'name':
-                    cursor.execute("SELECT * FROM PeopleInfo WHERE FirstName = ? AND LastName = ?", (first_name, last_name))
-                    after_record = cursor.fetchone()
-                    print(f"AFTER: {after_record}")
-                else:
-                    cursor.execute(f"SELECT * FROM {table_name} WHERE {unique_column} = ?", (target_value,))
-                    after_record = cursor.fetchone()
-                    print(f"AFTER: {after_record}")
-                
-                if affected_rows > 0:
-                    print(f"✅ Updated {table_name} record: {target_value} ({affected_rows} row(s))")
-                else:
-                    print(f"⚠️  No rows updated for {table_name} record: {target_value}")
-            except Exception as e:
-                logging.error(f"Error updating {table_name} record {target_value}: {e}")
-                print(f"Error details: {e}")
-        
-        print(f"\n=== Committing changes to {table_name} ===")
         conn.commit()
 
 def update_existing_records_by_id(update_df, table_name, conn):
@@ -509,32 +408,6 @@ def get_person_id_by_email(email, conn):
         cursor.execute(query, email)
         row = cursor.fetchone()
         return row[0] if row else None
-
-def get_investment_by_refnum(refnum, conn):
-    query = "SELECT InvestmentID FROM Investment WHERE RefNum = ?"
-    with conn.cursor() as cursor:
-        cursor.execute(query, refnum)
-        row = cursor.fetchone()
-        return row[0] if row else None
-
-def get_last_inserted_id(table_name, unique_column, unique_value, conn):
-    """Get the ID of a recently inserted record."""
-    try:
-        if table_name == 'VoucherCompany':
-            id_column = 'CompanyID'
-        elif table_name == 'PeopleInfo':
-            id_column = 'PersonID'
-        else:
-            return None
-            
-        query = f"SELECT {id_column} FROM {table_name} WHERE {unique_column} = ?"
-        with conn.cursor() as cursor:
-            cursor.execute(query, unique_value)
-            row = cursor.fetchone()
-            return row[0] if row else None
-    except Exception as e:
-        logging.error(f"Error getting ID from {table_name}: {e}")
-        return None
     
 def insert_into_project_asgmt(refnum, person_id, conn):
     cursor = conn.cursor()
@@ -565,30 +438,37 @@ def normalize_company_name(company_name):
     
     normalized = company_name.lower().strip()
     
-    # Remove common business suffixes
+    # Remove common business suffixes (more comprehensive list)
     business_suffixes = [
         r'\binc\.?$', r'\bincorporated$', r'\bcorp\.?$', r'\bcorporation$',
         r'\bltd\.?$', r'\blimited$', r'\bllc$', r'\bco\.?$', r'\bcompany$',
-        r'\benterprises?$', r'\benterprise$'
+        r'\benterprises?$', r'\benterprise$', r'\bgroup$', r'\bholdings?$',
+        r'\bassociates?$', r'\bpartners?$', r'\bsolutions?$', r'\bservices?$',
+        r'\btechnologies$', r'\btechnology$', r'\btech$', r'\bsystems?$',
+        r'\bindustries$', r'\bindustrial$', r'\bmanufacturing$', r'\bmfg$'
     ]
+
+    changed = True
+    while changed:
+        old = normalized
+        for suffix in business_suffixes:
+            normalized = re.sub(suffix, '', normalized)
+        normalized = re.sub(r'\s+', ' ', normalized).strip()
+        changed = (normalized != old)
+
     
-    for suffix in business_suffixes:
-        normalized = re.sub(suffix, '', normalized)
+    # Handle punctuation more carefully - preserve meaningful separators
+    # Replace hyphens and underscores with spaces first
+    normalized = re.sub(r'[-_]', ' ', normalized)
     
-    # Remove punctuation and extra spaces
-    normalized = re.sub(r'[^\w\s]', ' ', normalized)
+    # Remove other punctuation except dots (which might be meaningful in tech names)
+    normalized = re.sub(r'[^\w\s\.]', ' ', normalized)
+    
+    # Clean up multiple spaces
     normalized = re.sub(r'\s+', ' ', normalized).strip()
-    
-    # Handle common variations
-    word_replacements = {
-        'handtools': 'hand tools',
-        'and': '&',
-        ' & ': ' and ',
-    }
-    
-    for old, new in word_replacements.items():
-        normalized = normalized.replace(old, new)
-    
+
+    normalized = re.sub(r'\.', '', normalized)
+    normalized = re.sub(r'\s+', ' ', normalized).strip()
     return normalized
 
 def normalize_person_name(person_name):
@@ -599,12 +479,14 @@ def normalize_person_name(person_name):
     normalized = person_name.lower().strip()
     
     # Remove common person name prefixes and suffixes
-    person_name_suffixes = [
-        r'\bmr\.?$', r'\bmrs\.?$', r'\bms\.?$', r'\bdr\.?$', r'\bphd\.?$'
+    person_name_affixes = [
+        r'^\s*mr\.?\s+', r'^\s*mrs\.?\s+', r'^\s*ms\.?\s+', r'^\s*dr\.?\s+',   # prefixes
+        r'\s+phd\.?\s*$', r'\s+md\.?\s*$', r'\s+jr\.?\s*$', r'\s+sr\.?\s*$', r'\s+mba\.?\s*$'    # suffixes
     ]
-    
-    for suffix in person_name_suffixes:
-        normalized = re.sub(suffix, '', normalized)
+
+    for affix in person_name_affixes:
+        normalized = re.sub(affix, '', normalized)
+
     
     # Remove punctuation and extra spaces
     normalized = re.sub(r'[^\w\s]', ' ', normalized)
@@ -632,33 +514,6 @@ def extract_operating_name(company_name):
     return company_name
 
 def find_similar_companies(new_company, existing_df, similarity_threshold=0.8):
-    """Find similar companies in the existing database."""
-    if existing_df.empty:
-        return []
-    
-    new_operating = extract_operating_name(new_company['CompanyName'])
-    new_normalized = normalize_person_name(new_operating)
-    
-    similar_companies = []
-    
-    for _, existing in existing_df.iterrows():
-        existing_operating = extract_operating_name(existing['CompanyName'])
-        existing_normalized = normalize_person_name(existing_operating)
-        
-        similarity = SequenceMatcher(None, new_normalized, existing_normalized).ratio()
-        
-        if similarity >= similarity_threshold:
-            similar_companies.append({
-                'existing_company': existing['CompanyName'],
-                'similarity': similarity,
-                'address': existing.get('Address', ''),
-                'city': existing.get('City', ''),
-                'province': existing.get('Province', '')
-            })
-    
-    return sorted(similar_companies, key=lambda x: x['similarity'], reverse=True)
-
-def find_similar_companies_with_ids(new_company, existing_df, similarity_threshold=0.8):
     """Find similar companies and return their IDs."""
     if existing_df.empty:
         return []
@@ -673,10 +528,14 @@ def find_similar_companies_with_ids(new_company, existing_df, similarity_thresho
         existing_normalized = normalize_company_name(existing_operating)
         
         similarity = SequenceMatcher(None, new_normalized, existing_normalized).ratio()
+        # if 'dot' in existing_normalized:
+        #     print('New Normalized:' + new_normalized)
+        #     print('Existing Normalized:' + existing_normalized)
+        #     print('Similarity: ' + str(similarity))
         
         if similarity >= similarity_threshold:
             similar_companies.append({
-                'company_id': existing['CompanyID'],  # Store the ID!
+                'company_id': existing['CompanyID'],
                 'existing_company': existing['CompanyName'],
                 'similarity': similarity,
                 'address': existing.get('Address', ''),
@@ -686,48 +545,28 @@ def find_similar_companies_with_ids(new_company, existing_df, similarity_thresho
     
     return sorted(similar_companies, key=lambda x: x['similarity'], reverse=True)
 
-def find_similar_people(new_person, existing_df, similarity_threshold=0.8):
-    """Find similar people in the existing database."""
-    if existing_df.empty:
-        return []
-    
-    new_full_name = new_person['FirstName'] + new_person['LastName']
-    new_normalized = normalize_person_name(new_full_name)
-    
-    similar_people = []
-    
-    for idx, existing in existing_df.iterrows():
-        existing_full_name = existing['FirstName'] + existing['LastName']
-        existing_normalized = normalize_person_name(existing_full_name)
-        
-        similarity = SequenceMatcher(None, new_normalized, existing_normalized).ratio()
-        
-        if similarity >= similarity_threshold:
-            similar_people.append({
-                'existing_last_name': existing['LastName'],
-                'existing_first_name': existing['FirstName'],
-                'similarity': similarity,
-                'email': existing.get('Email', ''),
-                'db_index': idx
-            })
-    
-    return sorted(similar_people, key=lambda x: x['similarity'], reverse=True)
 
-def find_similar_people_with_ids(new_person, existing_df, similarity_threshold=0.8):
+
+def find_similar_people(new_person, existing_df, similarity_threshold=0.8):
     """Find similar people and return their IDs."""
     if existing_df.empty:
         return []
     
+    new_email = (new_person.get('Email') or "").strip().lower()
     new_full_name = new_person['FirstName'] + new_person['LastName']
     new_normalized = normalize_person_name(new_full_name)
-    
+
     similar_people = []
     
     for _, existing in existing_df.iterrows():
+        existing_email = (existing.get('Email') or "").strip().lower()
         existing_full_name = existing['FirstName'] + existing['LastName']
         existing_normalized = normalize_person_name(existing_full_name)
-        
-        similarity = SequenceMatcher(None, new_normalized, existing_normalized).ratio()
+
+        if new_email and existing_email and new_email == existing_email:
+            similarity = 1.0
+        else:
+            similarity = SequenceMatcher(None, new_normalized, existing_normalized).ratio()
         
         if similarity >= similarity_threshold:
             similar_people.append({
@@ -742,20 +581,11 @@ def find_similar_people_with_ids(new_person, existing_df, similarity_threshold=0
 
 def handle_company_duplicates(df, existing_df, interactive=True, similarity_threshold=0.8):
     """
-    Handle potential company duplicates with user interaction including update functionality.
+    Handle potential company duplicates with corrected logic.
     
-    Workflow:
-    - Entries with matches above threshold: shown for interactive review
-    - Entries without matches above threshold: automatically skipped
-    
-    Args:
-        df: DataFrame with new company data
-        existing_df: DataFrame with existing company data  
-        interactive: Whether to prompt user for decisions on entries above threshold
-        similarity_threshold: Minimum similarity to consider a potential duplicate
-    
-    Returns:
-        Tuple of (companies_to_insert, companies_to_skip, companies_to_update)
+    Logic:
+    - No matches above threshold → INSERT as new
+    - Matches above threshold → Interactive review or auto-skip if non-interactive
     """
     insert_companies = []
     skip_companies = []
@@ -765,106 +595,18 @@ def handle_company_duplicates(df, existing_df, interactive=True, similarity_thre
         similar = find_similar_companies(new_company, existing_df, similarity_threshold)
         
         if not similar:
-            # No matches above threshold found - automatically skip
-            print(f"⏭️  Auto-skipping (no matches above {similarity_threshold}): '{new_company['CompanyName']}'")
-            skip_companies.append(new_company)
+            # No matches above threshold found - INSERT as new company
+            print(f"✅ Auto-inserting (no matches above {similarity_threshold}): '{new_company['CompanyName']}'")
+            insert_companies.append(new_company)
             continue
         
-        # Found similar companies above threshold - show for interactive review
+        # Found similar companies above threshold
         if interactive:
+            # Show for interactive review
             print(f"\n🔍 Potential duplicate found for: '{new_company['CompanyName']}'")
             print(f"   Address: {new_company.get('Address', 'N/A')}, {new_company.get('City', 'N/A')}")
             
-            for i, match in enumerate(similar[:3], 1):  # Show top 3 matches
-                print(f"   {i}. '{match['existing_company']}' (similarity: {match['similarity']:.2f})")
-                print(f"      Address: {match['address']}, {match['city']}")
-            
-            choice_made = False
-            while not choice_made:
-                choice = input("\nWhat would you like to do?\n"
-                             "1. Insert as new company\n"
-                             "2. Skip (it's a duplicate)\n"
-                             "3. Update existing record\n"
-                             "4. Show more details\n"
-                             "Enter choice (1-4): ").strip()
-                
-                if choice == '1':
-                    insert_companies.append(new_company)
-                    choice_made = True
-                elif choice == '2':
-                    skip_companies.append(new_company)
-                    choice_made = True
-                elif choice == '3':
-                    # Let user select which existing company to update
-                    if len(similar) == 1:
-                        selected_company = similar[0]['existing_company']
-                    else:
-                        print("\nSelect which existing company to update:")
-                        for i, match in enumerate(similar[:3], 1):
-                            print(f"   {i}. '{match['existing_company']}'")
-                        
-                        while True:
-                            try:
-                                selection = int(input("Enter number (1-{}): ".format(min(3, len(similar)))).strip())
-                                if 1 <= selection <= min(3, len(similar)):
-                                    selected_company = similar[selection-1]['existing_company']
-                                    break
-                                else:
-                                    print("Invalid selection. Please try again.")
-                            except ValueError:
-                                print("Please enter a valid number.")
-                    
-                    # Create update record with the existing company name as the unique identifier
-                    update_record = new_company.copy()
-                    update_record['_update_target'] = selected_company  # Store which company to update
-                    update_companies.append(update_record)
-                    print(f"✅ Will update '{selected_company}' with new information")
-                    choice_made = True
-                elif choice == '4':
-                    print(f"\nNew company details:")
-                    for key, value in new_company.items():
-                        print(f"  {key}: {value}")
-                    print(f"\nExisting company details:")
-                    for i, match in enumerate(similar[:3], 1):
-                        print(f"\n  Match {i}: '{match['existing_company']}'")
-                        print(f"    Address: {match['address']}")
-                        print(f"    City: {match['city']}")
-                        print(f"    Province: {match['province']}")
-                        print(f"    Similarity: {match['similarity']:.2f}")
-                    continue
-                else:
-                    print("Invalid choice. Please enter 1, 2, 3, or 4.")
-        else:
-            # Non-interactive mode: automatically skip entries above threshold
-            print(f"⏭️  Auto-skipping potential duplicate: '{new_company['CompanyName']}' "
-                  f"(similarity: {similar[0]['similarity']:.2f} with '{similar[0]['existing_company']}')")
-            skip_companies.append(new_company)
-    
-    return pd.DataFrame(insert_companies), pd.DataFrame(skip_companies), pd.DataFrame(update_companies)
-
-def handle_company_duplicates_with_ids(df, existing_df, interactive=True, similarity_threshold=0.8):
-    """
-    Handle potential company duplicates with ID-based updates.
-    """
-    insert_companies = []
-    skip_companies = []
-    update_companies = []
-    
-    for _, new_company in df.iterrows():
-        similar = find_similar_companies_with_ids(new_company, existing_df, similarity_threshold)
-        
-        if not similar:
-            # No matches above threshold found - automatically skip
-            print(f"⭐️ Auto-skipping (no matches above {similarity_threshold}): '{new_company['CompanyName']}'")
-            skip_companies.append(new_company)
-            continue
-        
-        # Found similar companies above threshold - show for interactive review
-        if interactive:
-            print(f"\n🔍 Potential duplicate found for: '{new_company['CompanyName']}'")
-            print(f"   Address: {new_company.get('Address', 'N/A')}, {new_company.get('City', 'N/A')}")
-            
-            for i, match in enumerate(similar[:3], 1):  # Show top 3 matches
+            for i, match in enumerate(similar[:3], 1):
                 print(f"   {i}. '{match['existing_company']}' (similarity: {match['similarity']:.2f}) [ID: {match['company_id']}]")
                 print(f"      Address: {match['address']}, {match['city']}")
             
@@ -881,14 +623,13 @@ def handle_company_duplicates_with_ids(df, existing_df, interactive=True, simila
                     insert_companies.append(new_company)
                     choice_made = True
                 elif choice == '2':
-                    # Let user select which existing company this is a duplicate of
+                    # User confirms it's a duplicate - skip and store reference
                     if len(similar) == 1:
                         selected_match = similar[0]
                     else:
                         print("\nWhich existing company is this a duplicate of?")
                         for i, match in enumerate(similar[:3], 1):
                             print(f"   {i}. '{match['existing_company']}' [ID: {match['company_id']}]")
-                            print(f"      Address: {match['address']}, {match['city']}")
                         
                         while True:
                             try:
@@ -901,21 +642,19 @@ def handle_company_duplicates_with_ids(df, existing_df, interactive=True, simila
                             except ValueError:
                                 print("Please enter a valid number.")
                     
-                    # Store the matched company info in the skip record
                     skip_record = new_company.copy()
                     skip_record['_matched_existing_id'] = selected_match['company_id']
                     skip_record['_matched_existing_name'] = selected_match['existing_company']
                     skip_companies.append(skip_record)
                     choice_made = True
                 elif choice == '3':
-                    # Let user select which existing company to update
+                    # Update existing record
                     if len(similar) == 1:
                         selected_match = similar[0]
                     else:
                         print("\nSelect which existing company to update:")
                         for i, match in enumerate(similar[:3], 1):
                             print(f"   {i}. '{match['existing_company']}' [ID: {match['company_id']}]")
-                            print(f"      Address: {match['address']}, {match['city']}")
                         
                         while True:
                             try:
@@ -928,14 +667,13 @@ def handle_company_duplicates_with_ids(df, existing_df, interactive=True, simila
                             except ValueError:
                                 print("Please enter a valid number.")
                     
-                    # Create update record with ID for targeting
                     update_record = new_company.copy()
-                    update_record['_update_target_id'] = selected_match['company_id']  # Store CompanyID
-                    
+                    update_record['_update_target_id'] = selected_match['company_id']
                     update_companies.append(update_record)
-                    print(f"✅ Will update '{selected_match['existing_company']}' (ID: {selected_match['company_id']}) with new information")
+                    print(f"✅ Will update '{selected_match['existing_company']}' (ID: {selected_match['company_id']})")
                     choice_made = True
                 elif choice == '4':
+                    # Show more details
                     print(f"\nNew company details:")
                     for key, value in new_company.items():
                         print(f"  {key}: {value}")
@@ -949,29 +687,21 @@ def handle_company_duplicates_with_ids(df, existing_df, interactive=True, simila
                 else:
                     print("Invalid choice. Please enter 1, 2, 3, or 4.")
         else:
-            # Non-interactive mode: automatically skip entries above threshold
+            # Non-interactive mode: auto-skip potential duplicates
             print(f"⭐️ Auto-skipping potential duplicate: '{new_company['CompanyName']}' "
                   f"(similarity: {similar[0]['similarity']:.2f} with '{similar[0]['existing_company']}')")
-            skip_companies.append(new_company)
+            
+            # Store reference to the most similar existing company
+            skip_record = new_company.copy()
+            skip_record['_matched_existing_id'] = similar[0]['company_id']
+            skip_record['_matched_existing_name'] = similar[0]['existing_company']
+            skip_companies.append(skip_record)
     
     return pd.DataFrame(insert_companies), pd.DataFrame(skip_companies), pd.DataFrame(update_companies)
 
 def handle_person_duplicates(df, existing_df, interactive=True, similarity_threshold=0.8):
     """
-    Handle potential person duplicates with user interaction including update functionality.
-    
-    Workflow:
-    - Entries with matches above threshold: shown for interactive review
-    - Entries without matches above threshold: automatically skipped
-    
-    Args:
-        df: DataFrame with new person data
-        existing_df: DataFrame with existing person data  
-        interactive: Whether to prompt user for decisions on entries above threshold
-        similarity_threshold: Minimum similarity to consider a potential duplicate
-    
-    Returns:
-        Tuple of (people_to_insert, people_to_skip, people_to_update)
+    Handle potential person duplicates with ID-based updates.
     """
     insert_people = []
     skip_people = []
@@ -981,146 +711,11 @@ def handle_person_duplicates(df, existing_df, interactive=True, similarity_thres
         similar = find_similar_people(new_person, existing_df, similarity_threshold)
         
         if not similar:
-            # No matches above threshold found - automatically skip
             full_name = f"{new_person.get('FirstName', '')} {new_person.get('LastName', '')}"
-            print(f"⭐️ Auto-skipping (no matches above {similarity_threshold}): '{full_name}'")
-            skip_people.append(new_person)
+            print(f"✅ Auto-inserting (no matches above {similarity_threshold}): '{full_name}'")
+            insert_people.append(new_person)
             continue
-        
-        # Found similar people above threshold - show for interactive review
-        if interactive:
-            full_name = f"{new_person.get('FirstName', '')} {new_person.get('LastName', '')}"
-            print(f"\n🔍 Potential duplicate found for: '{full_name}'")
-            print(f"   Email: {new_person.get('Email', 'N/A')}")
-            
-            for i, match in enumerate(similar[:3], 1):
-                existing_name = f"{match['existing_first_name']} {match['existing_last_name']}"
-                email_display = match['email'] if match['email'] else 'None'
-                print(f"   {i}. '{existing_name}' (similarity: {match['similarity']:.2f})")
-                print(f"      Email: {email_display}")
-            
-            # This inner loop should break when a valid choice is made
-            choice_made = False
-            while not choice_made:
-                choice = input("\nWhat would you like to do?\n"
-                             "1. Insert as new person\n"
-                             "2. Skip (it's a duplicate)\n"
-                             "3. Update existing record\n"
-                             "4. Show more details\n"
-                             "Enter choice (1-4): ").strip()
-                
-                if choice == '1':
-                    insert_people.append(new_person)
-                    choice_made = True
-                elif choice == '2':
-                    # Let user select which existing person this is a duplicate of
-                    if len(similar) == 1:
-                        selected_match = similar[0]
-                    else:
-                        print("\nWhich existing person is this a duplicate of?")
-                        for i, match in enumerate(similar[:3], 1):
-                            existing_name = f"{match['existing_first_name']} {match['existing_last_name']}"
-                            email_display = match['email'] if match['email'] else 'None'
-                            print(f"   {i}. '{existing_name}' ({email_display})")
-                        
-                        while True:
-                            try:
-                                selection = int(input("Enter number (1-{}): ".format(min(3, len(similar)))).strip())
-                                if 1 <= selection <= min(3, len(similar)):
-                                    selected_match = similar[selection-1]
-                                    break
-                                else:
-                                    print("Invalid selection. Please try again.")
-                            except ValueError:
-                                print("Please enter a valid number.")
-                    
-                    # Store the matched person info in the skip record
-                    skip_record = new_person.copy()
-                    if selected_match['email']:
-                        skip_record['_matched_existing'] = selected_match['email']
-                        skip_record['_matched_by'] = 'email'
-                    else:
-                        skip_record['_matched_existing'] = f"{selected_match['existing_first_name']}|{selected_match['existing_last_name']}"
-                        skip_record['_matched_by'] = 'name'
-                    skip_people.append(skip_record)
-                    choice_made = True
-                elif choice == '3':
-                    # Let user select which existing person to update
-                    if len(similar) == 1:
-                        selected_match = similar[0]
-                    else:
-                        print("\nSelect which existing person to update:")
-                        for i, match in enumerate(similar[:3], 1):
-                            existing_name = f"{match['existing_first_name']} {match['existing_last_name']}"
-                            email_display = match['email'] if match['email'] else 'None'
-                            print(f"   {i}. '{existing_name}' ({email_display})")
-                        
-                        while True:
-                            try:
-                                selection = int(input("Enter number (1-{}): ".format(min(3, len(similar)))).strip())
-                                if 1 <= selection <= min(3, len(similar)):
-                                    selected_match = similar[selection-1]
-                                    break
-                                else:
-                                    print("Invalid selection. Please try again.")
-                            except ValueError:
-                                print("Please enter a valid number.")
-                    
-                    # Create update record - use email if available, otherwise use name combination
-                    update_record = new_person.copy()
-                    if selected_match['email']:
-                        update_record['_update_target'] = selected_match['email']
-                        update_record['_update_by'] = 'email'
-                    else:
-                        # Use first name + last name combination for identification
-                        update_record['_update_target'] = f"{selected_match['existing_first_name']}|{selected_match['existing_last_name']}"
-                        update_record['_update_by'] = 'name'
-                    
-                    update_people.append(update_record)
-                    selected_name = f"{selected_match['existing_first_name']} {selected_match['existing_last_name']}"
-                    print(f"✅ Will update '{selected_name}' with new information")
-                    choice_made = True
-                elif choice == '4':
-                    print(f"\nNew person details:")
-                    for key, value in new_person.items():
-                        print(f"  {key}: {value}")
-                    print(f"\nExisting person details:")
-                    for i, match in enumerate(similar[:3], 1):
-                        existing_name = f"{match['existing_first_name']} {match['existing_last_name']}"
-                        print(f"\n  Match {i}: '{existing_name}'")
-                        print(f"    Email: {match['email']}")
-                        print(f"    Similarity: {match['similarity']:.2f}")
-                    # Don't set choice_made = True here, so it continues the loop
-                else:
-                    print("Invalid choice. Please enter 1, 2, 3, or 4.")
-        else:
-            # Non-interactive mode: automatically skip entries above threshold
-            full_name = f"{new_person.get('FirstName', '')} {new_person.get('LastName', '')}"
-            existing_name = f"{similar[0]['existing_first_name']} {similar[0]['existing_last_name']}"
-            print(f"⭐️ Auto-skipping potential duplicate: '{full_name}' "
-                  f"(similarity: {similar[0]['similarity']:.2f} with '{existing_name}')")
-            skip_people.append(new_person)
-    
-    return pd.DataFrame(insert_people), pd.DataFrame(skip_people), pd.DataFrame(update_people)
 
-# Updated handle_person_duplicates function that stores PersonID
-def handle_person_duplicates_with_ids(df, existing_df, interactive=True, similarity_threshold=0.8):
-    """
-    Handle potential person duplicates with ID-based updates.
-    """
-    insert_people = []
-    skip_people = []
-    update_people = []
-    
-    for _, new_person in df.iterrows():
-        similar = find_similar_people_with_ids(new_person, existing_df, similarity_threshold)
-        
-        if not similar:
-            # No matches above threshold found - automatically skip
-            full_name = f"{new_person.get('FirstName', '')} {new_person.get('LastName', '')}"
-            print(f"⭐️ Auto-skipping (no matches above {similarity_threshold}): '{full_name}'")
-            skip_people.append(new_person)
-            continue
         
         # Found similar people above threshold - show for interactive review
         if interactive:
@@ -1231,43 +826,7 @@ def sync_investment_data(df, research_fund_id):
     """Convenience function to sync Investment data."""
     sync_with_database(df, 'Investment', research_fund_id)
 
-def sync_voucher_company_data(df):
-    sync_with_database(df, 'VoucherCompany')
-
-def sync_voucher_company_data_enhanced(df, interactive=True, similarity_threshold=0.8):
-    """Enhanced version of sync_voucher_company_data with duplicate detection and update support."""
-    conn = connect_to_db(False)
-    if conn:
-        try:
-            existing_df = load_existing_records_enhanced('VoucherCompany', conn=conn)
-            
-            # Handle duplicates - now returns insert, skip, and update DataFrames
-            insert_df, skip_df, update_df = handle_company_duplicates(
-                df, existing_df, interactive, similarity_threshold
-            )
-            
-            if not insert_df.empty:
-                insert_new_records(insert_df, 'VoucherCompany', conn)
-            
-            if not update_df.empty:
-                update_existing_records_enhanced(update_df, 'VoucherCompany', conn)
-            
-            logging.info(f"VoucherCompany - Inserted: {len(insert_df)}, "
-                        f"Skipped: {len(skip_df)}, Updated: {len(update_df)}")
-            
-            if not skip_df.empty:
-                logging.info("Skipped companies (potential duplicates):")
-                for _, company in skip_df.iterrows():
-                    logging.info(f"  - {company['CompanyName']}")
-                    
-        finally:
-            conn.close()
-            return insert_df, skip_df, update_df  # Return all three DataFrames
-    else:
-        logging.error("Could not connect to DB")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-def sync_voucher_company_data_enhanced_with_ids(df, interactive=True, similarity_threshold=0.8):
+def sync_voucher_company_data(df, interactive=True, similarity_threshold=0.8):
     """Enhanced version with ID-based duplicate detection and updates."""
     conn = connect_to_db(False)
     if conn:
@@ -1275,7 +834,7 @@ def sync_voucher_company_data_enhanced_with_ids(df, interactive=True, similarity
             existing_df = load_existing_records_with_ids('VoucherCompany', conn=conn)
             
             # Handle duplicates with ID storage  
-            insert_df, skip_df, update_df = handle_company_duplicates_with_ids(
+            insert_df, skip_df, update_df = handle_company_duplicates(
                 df, existing_df, interactive, similarity_threshold
             )
             
@@ -1299,45 +858,8 @@ def sync_voucher_company_data_enhanced_with_ids(df, interactive=True, similarity
     else:
         logging.error("Could not connect to DB")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-def sync_people_info_data(df):
-    sync_with_database(df, 'PeopleInfo')
-
-def sync_people_info_data_enhanced(df, interactive=True, similarity_threshold=0.8):
-    """Enhanced version of sync_people_info_data with duplicate detection and update support."""
-    conn = connect_to_db(False)
-    if conn:
-        try:
-            existing_df = load_existing_records_enhanced('PeopleInfo', conn=conn)
-            
-            # Handle duplicates - now returns insert, skip, and update DataFrames
-            insert_df, skip_df, update_df = handle_person_duplicates(
-                df, existing_df, interactive, similarity_threshold
-            )
-            
-            if not insert_df.empty:
-                insert_new_records(insert_df, 'PeopleInfo', conn)
-            
-            if not update_df.empty:
-                update_existing_records_enhanced(update_df, 'PeopleInfo', conn)
-            
-            logging.info(f"PeopleInfo - Inserted: {len(insert_df)}, "
-                        f"Skipped: {len(skip_df)}, Updated: {len(update_df)}")
-            
-            if not skip_df.empty:
-                logging.info("Skipped people (potential duplicates):")
-                for _, person in skip_df.iterrows():
-                    full_name = f"{person.get('FirstName', '')} {person.get('LastName', '')}"
-                    logging.info(f"  - {full_name}")
-                    
-        finally:
-            conn.close()
-            return insert_df, skip_df, update_df  # Return all three DataFrames
-    else:
-        logging.error("Could not connect to DB")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     
-def sync_people_info_data_enhanced_with_ids(df, interactive=True, similarity_threshold=0.8):
+def sync_people_info_data(df, interactive=True, similarity_threshold=0.8):
     """Enhanced version with ID-based duplicate detection and updates."""
     conn = connect_to_db(False)
     if conn:
@@ -1345,7 +867,7 @@ def sync_people_info_data_enhanced_with_ids(df, interactive=True, similarity_thr
             existing_df = load_existing_records_with_ids('PeopleInfo', conn=conn)
             
             # Handle duplicates with ID storage
-            insert_df, skip_df, update_df = handle_person_duplicates_with_ids(
+            insert_df, skip_df, update_df = handle_person_duplicates(
                 df, existing_df, interactive, similarity_threshold
             )
             
