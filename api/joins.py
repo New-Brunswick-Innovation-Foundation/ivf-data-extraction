@@ -1,12 +1,12 @@
 from database.get import get_company_id_by_name, get_person_id_by_email 
 from database.insert import insert_into_company_asgmt, insert_into_project_asgmt
+from database.connection import connect_to_db
 from api.utils import assignment_exists, safe_int
 
 
 def process_join_tables(investment_df,
                         people_insert_df, people_skip_df, people_update_df,
                         company_insert_df, company_skip_df, company_update_df):
-    from database import connect_to_db
     conn = connect_to_db(False)
     if not conn:
         print("Unable to connect to DB for join table inserts.")
