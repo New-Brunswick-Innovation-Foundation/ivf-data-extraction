@@ -1,7 +1,7 @@
 from datetime import datetime
 from api.tasks import get_application_task, get_application_task_ID, get_task_value
 from api.mapping import map_fiscal_year, map_province, map_city_to_region, map_decision_date, map_selector_of_research
-from constants import sector_mapping, province_mapping, city_to_region_mapping
+from backend.constants import sector_mapping, province_mapping, city_to_region_mapping
 from api.utils import clean_email, clean_value
 
 

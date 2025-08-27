@@ -1,6 +1,6 @@
 import logging
 import pandas as pd
-from constants import TABLE_CONFIGS
+from backend.constants import TABLE_CONFIGS
 from database.connection import connect_to_db
 from database.duplicates import handle_company_duplicates, handle_person_duplicates
 from database.get import get_existing_records, get_existing_records_with_ids

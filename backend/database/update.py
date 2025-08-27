@@ -1,6 +1,6 @@
 import logging
 import pandas as pd
-from constants import TABLE_CONFIGS
+from backend.constants import TABLE_CONFIGS
 
 logging.basicConfig(level=logging.INFO)
 

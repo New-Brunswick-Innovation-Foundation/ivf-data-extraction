@@ -1,7 +1,7 @@
 from api.tasks import get_application_task, get_application_task_ID, get_application_tasks
 from api.tables import get_investment, get_people_info, get_voucher_company
 from api.client import get_paginated, get_session, load_api_info, refresh_token
-from constants import numeric_columns
+from backend.constants import numeric_columns
 import pandas as pd
 
 

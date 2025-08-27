@@ -1,4 +1,4 @@
-from constants import TABLE_CONFIGS
+from backend.constants import TABLE_CONFIGS
 import pandas as pd
 import logging
 import pyodbc
