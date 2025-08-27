@@ -8,7 +8,7 @@ def main():
     program_name = 'Innovation Voucher Fund'
     ivf_program_id = get_program_ID(program_name)
     responses = get_program_applications(ivf_program_id)
-    applications = filter_program_applications(responses, '2026')
+    applications = filter_program_applications(responses, '2025')
     investment_df, people_info_df, voucher_company_df = process_program_applications(applications)
     
     # Remove duplicates within the current batch first
