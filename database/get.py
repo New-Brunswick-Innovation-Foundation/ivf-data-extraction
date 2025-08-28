@@ -46,11 +46,11 @@ def get_existing_records_with_ids(table_name, filter_value=None, conn=None):
     
     try:
         with conn.cursor() as cursor:
-            if table_name == 'VoucherCompany':
+            if table_name == 'staging.VoucherCompany':
                 # Load company records with CompanyID
                 query = f"SELECT CompanyID, CompanyName, Address, City, Province FROM {table_name}"
                 cursor.execute(query)
-            elif table_name == 'PeopleInfo':
+            elif table_name == 'staging.PeopleInfo':
                 # Load person records with PersonID
                 query = f"SELECT PersonID, LastName, FirstName, Email FROM {table_name}"
                 cursor.execute(query)
@@ -81,7 +81,7 @@ def get_company_id_by_name(company_name, conn):
         return row[0] if row else None
 
 def get_person_id_by_email(email, conn):
-    query = "SELECT PersonID FROM PeopleInfo WHERE Email = ?"
+    query = "SELECT PersonID FROM staging.PeopleInfo WHERE Email = ?"
     with conn.cursor() as cursor:
         cursor.execute(query, email)
         row = cursor.fetchone()

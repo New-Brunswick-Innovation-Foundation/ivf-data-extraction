@@ -8,11 +8,11 @@ import pandas as pd
 logging.basicConfig(level=logging.INFO)
 load_dotenv()
 
-db_host = os.getenv("DB_HOST")
-db_name = os.getenv("DB_NAME")
-db_user = os.getenv("DB_USERNAME")
-db_password = os.getenv("DB_PASSWORD")
-db_driver = os.getenv("DB_DRIVER")
+db_host = os.getenv("AZURE_DB_HOST")
+db_name = os.getenv("AZURE_DB_NAME")
+db_user = os.getenv("AZURE_DB_USERNAME")
+db_password = os.getenv("AZURE_DB_PASSWORD")
+db_driver = os.getenv("AZURE_DB_DRIVER")
 db_backup_dir = os.getenv("DB_BACKUP_DIR")
 
 def connect_to_db(autocommit):
@@ -22,7 +22,10 @@ def connect_to_db(autocommit):
             "server": db_host,
             "database": db_name,
             "uid": db_user,
-            "pwd": db_password
+            "pwd": db_password,
+            "Encrypt": "yes",
+            "TrustServerCertificate": "no",
+            "Connection Timeout": 30
         }
         if autocommit:
             conn_args["autocommit"] = autocommit

@@ -42,14 +42,14 @@ def sync_with_database(df, table_name, filter_value=None):
 # Convenience functions for backward compatibility and ease of use
 def sync_investment_data(df, research_fund_id):
     """Convenience function to sync Investment data."""
-    sync_with_database(df, 'Investment', research_fund_id)
+    sync_with_database(df, 'staging.Investment', research_fund_id)
 
 def sync_voucher_company_data(df, interactive=True, similarity_threshold=0.8):
     """Enhanced version with ID-based duplicate detection and updates."""
     conn = connect_to_db(False)
     if conn:
         try:
-            existing_df = get_existing_records_with_ids('VoucherCompany', conn=conn)
+            existing_df = get_existing_records_with_ids('staging.VoucherCompany', conn=conn)
             
             # Handle duplicates with ID storage  
             insert_df, skip_df, update_df = handle_company_duplicates(
@@ -57,10 +57,10 @@ def sync_voucher_company_data(df, interactive=True, similarity_threshold=0.8):
             )
             
             if not insert_df.empty:
-                insert_new_records(insert_df, 'VoucherCompany', conn)
+                insert_new_records(insert_df, 'staging.VoucherCompany', conn)
             
             if not update_df.empty:
-                update_existing_records_by_id(update_df, 'VoucherCompany', conn)  # Use ID-based updates
+                update_existing_records_by_id(update_df, 'staging.VoucherCompany', conn)  # Use ID-based updates
             
             logging.info(f"VoucherCompany - Inserted: {len(insert_df)}, "
                         f"Skipped: {len(skip_df)}, Updated: {len(update_df)}")
@@ -82,7 +82,7 @@ def sync_people_info_data(df, interactive=True, similarity_threshold=0.8):
     conn = connect_to_db(False)
     if conn:
         try:
-            existing_df = get_existing_records_with_ids('PeopleInfo', conn=conn)
+            existing_df = get_existing_records_with_ids('staging.PeopleInfo', conn=conn)
             
             # Handle duplicates with ID storage
             insert_df, skip_df, update_df = handle_person_duplicates(
@@ -90,10 +90,10 @@ def sync_people_info_data(df, interactive=True, similarity_threshold=0.8):
             )
             
             if not insert_df.empty:
-                insert_new_records(insert_df, 'PeopleInfo', conn)
+                insert_new_records(insert_df, 'staging.PeopleInfo', conn)
             
             if not update_df.empty:
-                update_existing_records_by_id(update_df, 'PeopleInfo', conn)  # Use ID-based updates
+                update_existing_records_by_id(update_df, 'staging.PeopleInfo', conn)  # Use ID-based updates
             
             logging.info(f"PeopleInfo - Inserted: {len(insert_df)}, "
                         f"Skipped: {len(skip_df)}, Updated: {len(update_df)}")

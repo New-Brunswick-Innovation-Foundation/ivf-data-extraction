@@ -65,9 +65,9 @@ def update_existing_records_by_id(update_df, table_name, conn):
     columns = config['columns']
     
     # Determine ID column and table specifics
-    if table_name == 'VoucherCompany':
+    if table_name == 'staging.VoucherCompany':
         id_column = 'CompanyID'
-    elif table_name == 'PeopleInfo':
+    elif table_name == 'staging.PeopleInfo':
         id_column = 'PersonID'
     else:
         logging.error(f"ID-based updates not supported for table: {table_name}")

@@ -45,10 +45,10 @@ def insert_new_records(insert_df, table_name, conn):
 
 def insert_into_project_asgmt(refnum, person_id, conn):
     cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM ProjectAsgmt WHERE RefNum = ? AND PersonID = ?", (refnum, person_id))
+    cursor.execute("SELECT 1 FROM staging.ProjectAsgmt WHERE RefNum = ? AND PersonID = ?", (refnum, person_id))
     if cursor.fetchone() is None:
         cursor.execute(
-            "INSERT INTO ProjectAsgmt (RefNum, PersonID, Participation, PersonTitle) VALUES (?, ?, 'PI', 'F')",
+            "INSERT INTO staging.ProjectAsgmt (RefNum, PersonID, Participation, PersonTitle) VALUES (?, ?, 'PI', 'F')",
             (refnum, person_id)
         )
         conn.commit()
@@ -56,10 +56,10 @@ def insert_into_project_asgmt(refnum, person_id, conn):
 
 def insert_into_company_asgmt(refnum, company_id, conn):
     cursor = conn.cursor()
-    cursor.execute("SELECT 1 FROM CompanyAsgmt WHERE RefNum = ? AND CompanyID = ?", (refnum, company_id))
+    cursor.execute("SELECT 1 FROM staging.CompanyAsgmt WHERE RefNum = ? AND CompanyID = ?", (refnum, company_id))
     if cursor.fetchone() is None:
         cursor.execute(
-            "INSERT INTO CompanyAsgmt (RefNum, CompanyID) VALUES (?, ?)",
+            "INSERT INTO staging.CompanyAsgmt (RefNum, CompanyID) VALUES (?, ?)",
             (refnum, company_id)
         )
         conn.commit()

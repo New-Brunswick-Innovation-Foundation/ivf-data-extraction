@@ -68,7 +68,7 @@ province_mapping = {
 }
 
 TABLE_CONFIGS = {
-    'Investment': {
+    'staging.Investment': {
         'unique_column': 'RefNum',
         'filter_column': 'ResearchFundID',
         'columns': [
@@ -78,7 +78,7 @@ TABLE_CONFIGS = {
             'NBIFSectorID', 'Notes'
         ]
     },
-    'VoucherCompany': {
+    'staging.VoucherCompany': {
         'unique_column': 'CompanyName',
         'filter_column': None,
         'columns': [
@@ -87,7 +87,7 @@ TABLE_CONFIGS = {
         ]
     }
     ,
-    'PeopleInfo': {
+    'staging.PeopleInfo': {
         'unique_column': 'Email',
         'filter_column': None,
         'columns': [
