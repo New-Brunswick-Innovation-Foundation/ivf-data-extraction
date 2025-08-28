@@ -1,14 +1,16 @@
 from api.joins import process_join_tables
 from api.program import filter_program_applications, get_program_ID, get_program_applications, process_program_applications
-from api.utils import remove_duplicates
+from api.utils import print_intro, choose_fiscal_year, remove_duplicates
 from database.connection import backup_db
 from database.sync import sync_investment_data, sync_people_info_data, sync_voucher_company_data
 
 def main():
+    print_intro()
+    fiscal_year = choose_fiscal_year()
     program_name = 'Innovation Voucher Fund'
     ivf_program_id = get_program_ID(program_name)
     responses = get_program_applications(ivf_program_id)
-    applications = filter_program_applications(responses, '2025')
+    applications = filter_program_applications(responses, fiscal_year)
     investment_df, people_info_df, voucher_company_df = process_program_applications(applications)
     
     # Remove duplicates within the current batch first

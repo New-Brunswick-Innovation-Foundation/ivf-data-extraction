@@ -3,13 +3,18 @@ import pandas as pd
 
 
 def format_row(label, name, contact, id_val="", similarity=""):
-    """Format a row into aligned columns for table display."""
-    return (
+
+    row = (
         f"{label.ljust(10)} | "
         f"{name.ljust(30)} | "
-        f"{contact.ljust(40)} | "
-        f"ID: {str(id_val).ljust(6)} Sim: {similarity}"
+        f"{contact.ljust(40)}"
     )
+
+    if id_val or similarity:
+        row += f" | Sim: {similarity.ljust(6)} ID: {str(id_val)}"
+
+    return row
+
 
 
 def print_person_duplicate(new_person, similar):
@@ -27,6 +32,7 @@ def print_person_duplicate(new_person, similar):
 
     # NEW record
     print(format_row("NEW", full_name, email))
+    print("/" * 100)
 
     # EXISTING matches
     for i, match in enumerate(similar[:3], 1):

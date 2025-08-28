@@ -1,5 +1,9 @@
 import pandas as pd
 import re
+import time
+import sys
+import readchar
+from constants import banner, years, regions
 
 def assignment_exists(table_name, refnum, entity_id, conn):
     """Check if an association already exists in the join table."""
@@ -48,3 +52,44 @@ def clean_value(string_value):
         return float(s)
     except (ValueError, TypeError):
         return 0.0
+
+def print_intro():
+    banner
+    for char in banner:
+        sys.stdout.write(char)
+        sys.stdout.flush()
+        time.sleep(0.001)
+
+    print("\n[+] System Initialized... Ready to Extract 🚀\n")
+    
+def choose_fiscal_year():
+    years
+    index = 0
+    while True:
+        print(f"\rSelect year: {years[index]}  ", end="", flush=True)
+        
+        key = readchar.readkey()
+        
+        if key == readchar.key.RIGHT or key == readchar.key.DOWN or key == " ":
+            index = (index + 1) % len(years)
+        elif key == readchar.key.LEFT or key == readchar.key.UP:
+            index = (index - 1) % len(years)
+        elif key == readchar.key.ENTER:
+            print()
+            return years[index]
+
+def choose_region(city):
+    regions
+    index = 0
+    while True:
+        print(f"\rEnter region for city '{city}': {regions[index]}  ", end="", flush=True)
+        
+        key = readchar.readkey()
+        
+        if key == readchar.key.RIGHT or key == readchar.key.DOWN or key == " ":
+            index = (index + 1) % len(regions)
+        elif key == readchar.key.LEFT or key == readchar.key.UP:
+            index = (index - 1) % len(regions)
+        elif key == readchar.key.ENTER:
+            print()
+            return regions[index]

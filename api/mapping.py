@@ -1,4 +1,5 @@
 from datetime import datetime
+from api.utils import choose_region
 
 def map_selector_of_research(selector_of_research_task, sector_mapping):
     data = selector_of_research_task[0].get("data", {})
@@ -18,9 +19,7 @@ def map_city_to_region(city, city_to_region_mapping):
     if normalized_city in city_to_region_mapping:
         return city_to_region_mapping[normalized_city]
     else:
-        region = input(f"Enter region for city '{city}' (NE/NW/SE/SW): ").strip().upper()
-        while region not in ["NE", "NW", "SE", "SW"]:
-            region = input("Invalid input. Please enter NE, NW, SE, or SW: ").strip().upper()
+        region = choose_region(city)
         city_to_region_mapping[normalized_city] = region  # Save it for future use
         return region
 
