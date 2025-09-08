@@ -6,7 +6,8 @@ from api.utils import assignment_exists, safe_int
 
 def process_join_tables(investment_df,
                         people_insert_df, people_skip_df, people_update_df,
-                        company_insert_df, company_skip_df, company_update_df):
+                        company_insert_df, company_skip_df, company_update_df,
+                        batch_id, loaded_at):
     conn = connect_to_db(False)
     if not conn:
         print("Unable to connect to DB for join table inserts.")
@@ -44,8 +45,8 @@ def process_join_tables(investment_df,
             # insert only if not already linked
             if person_id is not None:
                 key = (refnum, person_id)
-                if key not in linked_people and not assignment_exists("ProjectAsgmt", refnum, person_id, conn):
-                    insert_into_project_asgmt(refnum, person_id, conn)
+                if key not in linked_people and not assignment_exists("staging.ProjectAsgmt", refnum, person_id, conn):
+                    insert_into_project_asgmt(refnum, person_id, batch_id, loaded_at, conn)
                     linked_people.add(key)
 
             # ---- Handle Companies ----
@@ -69,8 +70,8 @@ def process_join_tables(investment_df,
 
             if company_id is not None:
                 key = (refnum, company_id)
-                if key not in linked_companies and not assignment_exists("CompanyAsgmt", refnum, company_id, conn):
-                    insert_into_company_asgmt(refnum, company_id, conn)
+                if key not in linked_companies and not assignment_exists("staging.CompanyAsgmt", refnum, company_id, conn):
+                    insert_into_company_asgmt(refnum, company_id, batch_id, loaded_at, conn)
                     linked_companies.add(key)
 
     finally:

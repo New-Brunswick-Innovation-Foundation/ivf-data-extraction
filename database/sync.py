@@ -9,7 +9,7 @@ from database.update import update_existing_records, update_existing_records_by_
 
 logging.basicConfig(level=logging.INFO)
 
-def sync_with_database(df, table_name, filter_value=None):
+def sync_with_database(df, table_name, filter_value=None, batch_id=None, loaded_at=None):
     """
     Sync dataframe with the specified database table.
     
@@ -22,6 +22,10 @@ def sync_with_database(df, table_name, filter_value=None):
     if not config:
         logging.error(f"Unknown table: {table_name}")
         return
+    
+    df = df.copy()
+    df['BatchID'] = batch_id
+    df['LoadedAt'] = loaded_at
     
     conn = connect_to_db(False)
     if conn:
@@ -40,12 +44,17 @@ def sync_with_database(df, table_name, filter_value=None):
         logging.error("Could not connect to DB")
 
 # Convenience functions for backward compatibility and ease of use
-def sync_investment_data(df, research_fund_id):
+def sync_investment_data(df, research_fund_id, batch_id, loaded_at):
     """Convenience function to sync Investment data."""
-    sync_with_database(df, 'staging.Investment', research_fund_id)
+    sync_with_database(df, 'staging.Investment', research_fund_id, batch_id, loaded_at)
 
-def sync_voucher_company_data(df, interactive=True, similarity_threshold=0.8):
+def sync_voucher_company_data(df, batch_id, loaded_at, interactive=True, similarity_threshold=0.8):
     """Enhanced version with ID-based duplicate detection and updates."""
+
+    df = df.copy()
+    df['BatchID'] = batch_id
+    df['LoadedAt'] = loaded_at
+
     conn = connect_to_db(False)
     if conn:
         try:
@@ -77,8 +86,13 @@ def sync_voucher_company_data(df, interactive=True, similarity_threshold=0.8):
         logging.error("Could not connect to DB")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     
-def sync_people_info_data(df, interactive=True, similarity_threshold=0.8):
+def sync_people_info_data(df, batch_id, loaded_at, interactive=True, similarity_threshold=0.8):
     """Enhanced version with ID-based duplicate detection and updates."""
+
+    df = df.copy()
+    df['BatchID'] = batch_id
+    df['LoadedAt'] = loaded_at
+
     conn = connect_to_db(False)
     if conn:
         try:

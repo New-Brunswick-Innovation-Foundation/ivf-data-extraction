@@ -75,7 +75,7 @@ TABLE_CONFIGS = {
             'RefNum', 'ApplTitle', 'ExecSum', 'FiscalYear', 'ResearchFundID',
             'ApplDate', 'DecisionDate', 'AmtRqstd', 'AmtAwarded', 'TotalLevAmt',
             'PrivSectorLev', 'FedLeverage', 'OtherLeverage', 'FTE', 'PTE',
-            'NBIFSectorID', 'Notes'
+            'NBIFSectorID', 'Notes', 'BatchID', 'LoadedAt'
         ]
     },
     'staging.VoucherCompany': {
@@ -83,7 +83,8 @@ TABLE_CONFIGS = {
         'filter_column': None,
         'columns': [
             'CompanyName', 'Address', 'City', 'Province',
-            'PostalCode', 'Country', 'Region', 'IncorporationDate'
+            'PostalCode', 'Country', 'Region', 'IncorporationDate',
+            'BatchID', 'LoadedAt'
         ]
     }
     ,
@@ -92,7 +93,7 @@ TABLE_CONFIGS = {
         'filter_column': None,
         'columns': [
             'LastName', 'FirstName', 'Email', 'Phone', 
-            'Note', 'CommOptOut'
+            'Note', 'CommOptOut', 'BatchID', 'LoadedAt'
         ]
     }
 }
