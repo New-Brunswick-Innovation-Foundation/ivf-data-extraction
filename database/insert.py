@@ -40,7 +40,10 @@ def insert_new_records(insert_df, table_name, conn):
     with conn.cursor() as cursor:
         for _, row in insert_df.iterrows():
             values = tuple(None if pd.isna(x) else x for x in [row.get(col) for col in columns])
-            cursor.execute(insert_query, values)
+            try:
+                cursor.execute(insert_query, values)
+            except Exception as e:
+                print(f"❌ Insert failed into {table_name}: {e}\nValues: {values}")
         conn.commit()
 
 def insert_into_project_asgmt(refnum, person_id, batch_id, loaded_at, conn):

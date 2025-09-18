@@ -9,7 +9,7 @@ import uuid
 
 
 def main():
-    batch_id = str(uuid.uuid4())
+    batch_id = uuid.uuid4()
     loaded_at = datetime.now()
 
     print_intro()

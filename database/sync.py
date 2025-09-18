@@ -66,6 +66,7 @@ def sync_voucher_company_data(df, batch_id, loaded_at, interactive=True, similar
             )
             
             if not insert_df.empty:
+                print(f"[DEBUG] Preparing to insert {len(insert_df)} new VoucherCompany rows")
                 insert_new_records(insert_df, 'staging.VoucherCompany', conn)
             
             if not update_df.empty:
@@ -104,6 +105,7 @@ def sync_people_info_data(df, batch_id, loaded_at, interactive=True, similarity_
             )
             
             if not insert_df.empty:
+                print(f"[DEBUG] Preparing to insert {len(insert_df)} new PeopleInfo rows")
                 insert_new_records(insert_df, 'staging.PeopleInfo', conn)
             
             if not update_df.empty:

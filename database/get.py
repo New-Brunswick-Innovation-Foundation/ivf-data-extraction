@@ -74,9 +74,12 @@ def get_existing_records_with_ids(table_name, filter_value=None, conn=None):
         return pd.DataFrame()
 
 def get_company_id_by_name(company_name, conn):
-    query = "SELECT CompanyID FROM VoucherCompany WHERE CompanyName = ?"
+    query = "SELECT CompanyID FROM staging.VoucherCompany WHERE CompanyName = ?"
     with conn.cursor() as cursor:
-        cursor.execute(query, company_name)
+        try:
+            cursor.execute(query, company_name)
+        except Exception as e:
+            print(f"❌ Failed to search for {company_name}: {e}")
         row = cursor.fetchone()
         return row[0] if row else None
 

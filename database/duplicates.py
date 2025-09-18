@@ -3,18 +3,19 @@ import pandas as pd
 
 
 def format_row(label, name, contact, id_val="", similarity=""):
+    name_str = name or ""
+    contact_str = contact or ""
 
     row = (
         f"{label.ljust(10)} | "
-        f"{name.ljust(30)} | "
-        f"{contact.ljust(40)}"
+        f"{name_str.ljust(30)} | "
+        f"{contact_str.ljust(40)}"
     )
 
     if id_val or similarity:
-        row += f" | Sim: {similarity.ljust(6)} ID: {str(id_val)}"
+        row += f" | Sim: {(similarity or '').ljust(6)} ID: {str(id_val or '')}"
 
     return row
-
 
 
 def print_person_duplicate(new_person, similar):
