@@ -3,8 +3,15 @@ from api.program import filter_program_applications, get_program_ID, get_program
 from api.utils import print_intro, choose_fiscal_year, remove_duplicates
 from database.connection import backup_db
 from database.sync import sync_investment_data, sync_people_info_data, sync_voucher_company_data
+from datetime import datetime
+import uuid
+
+
 
 def main():
+    batch_id = uuid.uuid4()
+    loaded_at = datetime.now()
+
     print_intro()
     fiscal_year = choose_fiscal_year()
     program_name = 'Innovation Voucher Fund'
@@ -19,12 +26,14 @@ def main():
     voucher_company_df = remove_duplicates(voucher_company_df)
 
     # Backup database
-    backup_db()
+    #backup_db()
 
-    sync_investment_data(investment_df, 'IVF')
+    sync_investment_data(investment_df, 'IVF', batch_id, loaded_at)
 
     people_insert_df, people_skip_df, people_update_df = sync_people_info_data(
         people_info_df, 
+        batch_id,
+        loaded_at,
         interactive=True,
         similarity_threshold=0.75
     )
@@ -42,6 +51,8 @@ def main():
 
     company_insert_df, company_skip_df, company_update_df = sync_voucher_company_data(
         voucher_company_df, 
+        batch_id,
+        loaded_at,
         interactive=True,
         similarity_threshold=0.75
     )
@@ -60,7 +71,8 @@ def main():
     process_join_tables(
         investment_df, 
         people_insert_df, people_skip_df, people_update_df, 
-        company_insert_df, company_skip_df, company_update_df
+        company_insert_df, company_skip_df, company_update_df,
+        batch_id, loaded_at
     )
 
 if __name__ == "__main__":

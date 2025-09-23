@@ -8,10 +8,10 @@ from constants import banner, years, regions
 def assignment_exists(table_name, refnum, entity_id, conn):
     """Check if an association already exists in the join table."""
     cursor = conn.cursor()
-    if table_name == "ProjectAsgmt":
-        cursor.execute("SELECT 1 FROM ProjectAsgmt WHERE RefNum = ? AND PersonID = ?", (refnum, entity_id))
+    if table_name == "staging.ProjectAsgmt":
+        cursor.execute("SELECT 1 FROM staging.ProjectAsgmt WHERE RefNum = ? AND PersonID = ?", (refnum, entity_id))
     else:
-        cursor.execute("SELECT 1 FROM CompanyAsgmt WHERE RefNum = ? AND CompanyID = ?", (refnum, entity_id))
+        cursor.execute("SELECT 1 FROM staging.CompanyAsgmt WHERE RefNum = ? AND CompanyID = ?", (refnum, entity_id))
     return cursor.fetchone() is not None
 
 def safe_int(val):

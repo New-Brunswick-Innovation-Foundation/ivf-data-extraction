@@ -68,31 +68,32 @@ province_mapping = {
 }
 
 TABLE_CONFIGS = {
-    'Investment': {
+    'staging.Investment': {
         'unique_column': 'RefNum',
         'filter_column': 'ResearchFundID',
         'columns': [
             'RefNum', 'ApplTitle', 'ExecSum', 'FiscalYear', 'ResearchFundID',
             'ApplDate', 'DecisionDate', 'AmtRqstd', 'AmtAwarded', 'TotalLevAmt',
             'PrivSectorLev', 'FedLeverage', 'OtherLeverage', 'FTE', 'PTE',
-            'NBIFSectorID', 'Notes'
+            'NBIFSectorID', 'Notes', 'BatchID', 'LoadedAt'
         ]
     },
-    'VoucherCompany': {
+    'staging.VoucherCompany': {
         'unique_column': 'CompanyName',
         'filter_column': None,
         'columns': [
             'CompanyName', 'Address', 'City', 'Province',
-            'PostalCode', 'Country', 'Region', 'IncorporationDate'
+            'PostalCode', 'Country', 'Region', 'IncorporationDate',
+            'BatchID', 'LoadedAt'
         ]
     }
     ,
-    'PeopleInfo': {
+    'staging.PeopleInfo': {
         'unique_column': 'Email',
         'filter_column': None,
         'columns': [
             'LastName', 'FirstName', 'Email', 'Phone', 
-            'Note', 'CommOptOut'
+            'Note', 'CommOptOut', 'BatchID', 'LoadedAt'
         ]
     }
 }
