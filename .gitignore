@@ -40,3 +40,6 @@ Thumbs.db
 # Local config files
 *.local
 *.secret
+
+#Application-specific files
+program_info.json
