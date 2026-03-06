@@ -1,5 +1,7 @@
 from datetime import datetime
 from api.utils import choose_region
+import os
+import json
 
 def map_selector_of_research(selector_of_research_task, sector_mapping):
     data = selector_of_research_task[0].get("data", {})
@@ -14,13 +16,33 @@ def map_selector_of_research(selector_of_research_task, sector_mapping):
     
     return None  #for when no valid mapping was found
 
-def map_city_to_region(city, city_to_region_mapping):
-    normalized_city = city.strip().title()  # Normalize formatting
-    if normalized_city in city_to_region_mapping:
-        return city_to_region_mapping[normalized_city]
+def map_city_to_region(city):
+    json_path = 'city_to_region_mapping.json' # Adjust path if necessary
+    
+    # 1. Load the current mapping from the file
+    if os.path.exists(json_path):
+        with open(json_path, 'r') as file:
+            mapping = json.load(file)
     else:
-        region = choose_region(city)
-        city_to_region_mapping[normalized_city] = region  # Save it for future use
+        mapping = {}
+
+    normalized_city = city.strip().title()
+
+    # 2. Check if the city exists
+    if normalized_city in mapping:
+        return mapping[normalized_city]
+    
+    # 3. If it doesn't exist, ask the user and save it immediately!
+    else:
+        region = choose_region(city) # Your existing prompt function
+        
+        # Add the new city to our dictionary
+        mapping[normalized_city] = region 
+        
+        # Write the updated dictionary back to the JSON file
+        with open(json_path, 'w') as file:
+            json.dump(mapping, file, indent=4)
+            
         return region
 
 def map_province(province_index, province_mapping, company_name):

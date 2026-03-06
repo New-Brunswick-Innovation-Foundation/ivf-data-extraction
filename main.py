@@ -5,6 +5,8 @@ from database.connection import backup_db
 from database.sync import sync_investment_data, sync_people_info_data, sync_voucher_company_data
 from datetime import datetime
 import uuid
+import logging
+logging.getLogger('azure.core.pipeline.policies.http_logging_policy').setLevel(logging.WARNING)
 
 
 

@@ -3,17 +3,17 @@ import pandas as pd
 
 
 def format_row(label, name, contact, id_val="", similarity=""):
-    name_str = name or ""
-    contact_str = contact or ""
+    name_str = name if isinstance(name, str) else ""
+    contact_str = contact if isinstance(contact, str) else ""
 
     row = (
-        f"{label.ljust(10)} | "
+        f"{str(label).ljust(10)} | "
         f"{name_str.ljust(30)} | "
         f"{contact_str.ljust(40)}"
     )
 
     if id_val or similarity:
-        row += f" | Sim: {(similarity or '').ljust(6)} ID: {str(id_val or '')}"
+        row += f" | Sim: {str(similarity or '').ljust(6)} ID: {str(id_val or '')}"
 
     return row
 
