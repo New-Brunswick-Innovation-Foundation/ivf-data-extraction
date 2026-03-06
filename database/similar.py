@@ -35,21 +35,25 @@ def find_similar_companies(new_company, existing_df, similarity_threshold=0.8):
     
     return sorted(similar_companies, key=lambda x: x['similarity'], reverse=True)
 
-
-
 def find_similar_people(new_person, existing_df, similarity_threshold=0.8):
     """Find similar people and return their IDs."""
     if existing_df.empty:
         return []
     
-    new_email = (new_person.get('Email') or "").strip().lower()
+    # SAFELY EXTRACT NEW EMAIL
+    raw_new_email = new_person.get('Email')
+    new_email = raw_new_email.strip().lower() if isinstance(raw_new_email, str) else ""
+    
     new_full_name = new_person['FirstName'] + new_person['LastName']
     new_normalized = normalize_person_name(new_full_name)
 
     similar_people = []
     
     for _, existing in existing_df.iterrows():
-        existing_email = (existing.get('Email') or "").strip().lower()
+        # SAFELY EXTRACT EXISTING EMAIL
+        raw_existing_email = existing.get('Email')
+        existing_email = raw_existing_email.strip().lower() if isinstance(raw_existing_email, str) else ""
+        
         existing_full_name = existing['FirstName'] + existing['LastName']
         existing_normalized = normalize_person_name(existing_full_name)
 
